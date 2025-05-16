@@ -1,0 +1,15 @@
+{
+  "name": "wallet-decoder",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "wallet_decoder_bg.wasm",
+    "wallet_decoder.js",
+    "wallet_decoder.d.ts"
+  ],
+  "main": "wallet_decoder.js",
+  "types": "wallet_decoder.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

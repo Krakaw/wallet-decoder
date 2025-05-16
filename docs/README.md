@@ -1,0 +1,75 @@
+# Tari Wallet Decoder
+
+A WebAssembly module for decoding Tari wallet addresses and extracting their information.
+
+## Prerequisites
+
+- Rust and Cargo
+- wasm-pack (`cargo install wasm-pack`)
+- A web server (for testing)
+
+## Building
+
+1. Install the required tools:
+```bash
+cargo install wasm-pack
+```
+
+2. Build the WebAssembly module:
+```bash
+wasm-pack build --target web
+```
+
+3. Serve the files using a web server. For example, using Python:
+```bash
+python3 -m http.server
+```
+
+4. Open `http://localhost:8000` in your web browser.
+
+## Usage
+
+The module exposes a single function `decode_tari_address` that takes a Tari address string and returns a JSON object with the following information:
+
+- `base58`: The address in base58 format
+- `emoji`: The address in emoji format
+- `hex`: The address in hexadecimal format
+- `raw_bytes`: The raw bytes of the address
+- `network`: The network type
+- `network_byte`: The network byte
+- `features`: Object containing address features
+  - `features_byte`: The features byte
+  - `one_sided`: Whether it's a one-sided address
+  - `interactive`: Whether it's an interactive address
+  - `payment_id`: Whether it has a payment ID
+- `public_spend_key`: The public spend key in hex
+- `public_view_key`: The public view key in hex (if present)
+- `address_type`: The type of address (Single or Dual)
+- `payment_id`: The payment ID in hex (if present)
+
+### JavaScript Example
+
+```javascript
+import { decode_tari_address } from './pkg/wallet_decoder.js';
+
+async function decodeAddress(address) {
+    try {
+        const info = await decode_tari_address(address);
+        console.log(info);
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
+```
+
+## Development
+
+The project is structured as follows:
+
+- `src/lib.rs`: Contains the main WASM module code
+- `index.html`: A simple web interface for testing the decoder
+- `Cargo.toml`: Project dependencies and configuration
+
+## License
+
+This project is licensed under the MIT License. 
