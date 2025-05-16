@@ -44,6 +44,12 @@ The web interface allows you to:
   - Address type
   - Payment ID (if present)
 
+You can also pre-fill addresses using URL query parameters. For example:
+```
+http://localhost:8080?address=addr1&address=addr2&address=addr3
+```
+This will automatically decode and display multiple addresses on the page. Each address will be shown in its own card with selectable values.
+
 ### Node.js Example
 
 The Node.js example demonstrates how to use the decoder programmatically.
