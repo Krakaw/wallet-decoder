@@ -20,10 +20,8 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: wallet-decoder-aarch64-apple-darwin
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: wallet-decoder-x86_64-unknown-linux-gnu
 
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +40,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
+          name: wallet-decoder-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/wallet-decoder
           if-no-files-found: error
 
@@ -71,11 +69,15 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          cp artifacts/wallet-decoder-aarch64-apple-darwin release/wallet-decoder-aarch64-apple-darwin
-          cp artifacts/wallet-decoder-x86_64-unknown-linux-gnu release/wallet-decoder-x86_64-unknown-linux-gnu
+          # Find and copy the macOS ARM binary
+          find artifacts -name "wallet-decoder-aarch64-apple-darwin" -exec cp {} release/wallet-decoder-aarch64-apple-darwin \;
+          # Find and copy the Linux x86_64 binary
+          find artifacts -name "wallet-decoder-x86_64-unknown-linux-gnu" -exec cp {} release/wallet-decoder-x86_64-unknown-linux-gnu \;
 
       - name: List release files
-        run: ls -la release/
+        run: |
+          echo "Contents of release directory:"
+          ls -la release/
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
