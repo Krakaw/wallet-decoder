@@ -24,22 +24,24 @@ cargo install wasm-pack
 wasm-pack build --target web
 ```
 
-3. Serve the files using a web server. For example, using Python:
+3. Copy the built files to the docs directory:
 ```bash
+mkdir -p docs
+cp -r pkg/* docs/
+cp index.html docs/
+```
+
+4. Serve the files using a web server. For example, using Python:
+```bash
+cd docs
 python3 -m http.server
 ```
 
-4. Open `http://localhost:8000` in your web browser.
+5. Open `http://localhost:8000` in your web browser.
 
-## Deployment to GitHub Pages
+## Deployment
 
-1. Fork this repository
-2. Enable GitHub Pages in your repository settings:
-   - Go to Settings > Pages
-   - Select the `gh-pages` branch as the source
-   - Click Save
-
-3. The GitHub Action will automatically build and deploy your site when you push to the main branch.
+The project is automatically deployed to GitHub Pages when changes are pushed to the main branch. The deployment files are stored in the `docs` directory.
 
 ## Usage
 
@@ -64,7 +66,7 @@ The module exposes a single function `decode_tari_address` that takes a Tari add
 ### JavaScript Example
 
 ```javascript
-import init, { decode_tari_address } from './pkg/wallet_decoder.js';
+import init, { decode_tari_address } from './wallet_decoder.js';
 
 async function decodeAddress(address) {
     try {
@@ -85,7 +87,7 @@ The project is structured as follows:
 - `index.html`: A simple web interface for testing the decoder
 - `Cargo.toml`: Project dependencies and configuration
 - `.github/workflows/deploy.yml`: GitHub Actions workflow for automatic deployment
-- `deploy.sh`: Script for local deployment testing
+- `docs/`: Directory containing the deployed files for GitHub Pages
 
 ## License
 
