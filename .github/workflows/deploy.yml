@@ -40,6 +40,7 @@ jobs:
               { "source": "**", "destination": "/index.html" }
             ]
           }' > docs/_redirects
+          touch .nojekyll
           echo "Final docs directory contents:"
           ls -la docs/
 
