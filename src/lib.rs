@@ -1,13 +1,10 @@
 use serde::Serialize;
 use std::str::FromStr;
-#[cfg(feature = "tari")]
 use tari_common_types::tari_address::{TariAddress, TariAddressFeatures};
-#[cfg(feature = "tari")]
-use tari_utilities::{hex::Hex, SafePassword};
+use tari_utilities::{hex::Hex};
 use wasm_bindgen::prelude::*;
 
-#[cfg(feature = "tari")]
-mod wallet;
+// mod wallet;
 
 #[derive(Serialize)]
 pub struct AddressInfo {
@@ -32,16 +29,14 @@ pub struct FeaturesInfo {
     payment_id: bool,
 }
 
-#[wasm_bindgen]
-#[cfg(feature = "tari")]
-pub fn generate_wallet(password: Option<String>, network: String) -> Result<JsValue, JsError> {
-    let info = wallet::generate_wallet(password.map(SafePassword::from), network)
-        .map_err(|e| JsError::new(&format!("Error generating wallet: {:#?}", e)))?;
-    Ok(serde_wasm_bindgen::to_value(&info)?)
-}
+// #[wasm_bindgen]
+// pub fn generate_wallet(password: Option<String>, network: String) -> Result<JsValue, JsError> {
+//     let info = wallet::generate_wallet(password.map(SafePassword::from), network)
+//         .map_err(|e| JsError::new(&format!("Error generating wallet: {:#?}", e)))?;
+//     Ok(serde_wasm_bindgen::to_value(&info)?)
+// }
 
 #[wasm_bindgen]
-#[cfg(feature = "tari")]
 pub fn decode_tari_address(address_str: &str) -> Result<JsValue, JsError> {
     let address = TariAddress::from_str(address_str.trim())
         .map_err(|e| JsError::new(&format!("Error decoding address: {:#?}", e)))?;

@@ -4230,18 +4230,14 @@ dependencies = [
  "clap 4.5.38",
  "getrandom 0.2.16",
  "js-sys",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
  "serde",
  "serde-wasm-bindgen",
  "tari_common",
  "tari_common_types",
  "tari_core",
- "tari_crypto",
  "tari_key_manager",
  "tari_utilities",
  "wasm-bindgen",
- "zeroize",
 ]
 
 [[package]]
