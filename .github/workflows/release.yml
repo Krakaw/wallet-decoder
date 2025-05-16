@@ -60,7 +60,11 @@ jobs:
           merge-multiple: true
 
       - name: List artifacts
-        run: ls -la artifacts/
+        run: |
+          echo "Contents of artifacts directory:"
+          ls -la artifacts/
+          echo "Contents of artifacts subdirectories:"
+          find artifacts -type f
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -70,5 +74,7 @@ jobs:
           files: |
             artifacts/wallet-decoder-aarch64-apple-darwin
             artifacts/wallet-decoder-x86_64-unknown-linux-gnu
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
