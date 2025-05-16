@@ -33,6 +33,7 @@ jobs:
           echo "Copying files to docs directory..."
           cp -r pkg/* docs/
           cp index.html docs/
+          cp icon.png docs/
           echo "Creating _redirects file..."
           echo '{
             "rewrites": [
@@ -45,6 +46,7 @@ jobs:
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
+          force: true
           folder: docs
           branch: gh-pages
           clean: true
