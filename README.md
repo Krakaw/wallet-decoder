@@ -41,7 +41,18 @@ python3 -m http.server
 
 ## Deployment
 
-The project is automatically deployed to GitHub Pages when changes are pushed to the main branch. The deployment files are stored in the `docs` directory.
+The project is automatically deployed to GitHub Pages when changes are pushed to the main branch. The deployment process:
+
+1. Builds the WASM module
+2. Copies the built files to the docs directory
+3. Deploys the contents to the gh-pages branch
+
+To enable GitHub Pages:
+1. Go to your repository settings
+2. Navigate to "Pages" in the sidebar
+3. Select "Deploy from a branch" as the source
+4. Select the "gh-pages" branch and "/docs (docs)" folder
+5. Click Save
 
 ## Usage
 
@@ -87,7 +98,7 @@ The project is structured as follows:
 - `index.html`: A simple web interface for testing the decoder
 - `Cargo.toml`: Project dependencies and configuration
 - `.github/workflows/deploy.yml`: GitHub Actions workflow for automatic deployment
-- `docs/`: Directory containing the deployed files for GitHub Pages
+- `docs/`: Directory containing the built files for deployment
 
 ## License
 
