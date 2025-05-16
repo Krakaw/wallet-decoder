@@ -53,26 +53,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download macOS ARM artifact
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
-          merge-multiple: true
+          name: wallet-decoder-aarch64-apple-darwin
+          path: artifacts/macos-arm
+
+      - name: Download Linux x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wallet-decoder-x86_64-unknown-linux-gnu
+          path: artifacts/linux-x86_64
 
       - name: List artifacts
         run: |
-          echo "Contents of artifacts directory:"
-          ls -la artifacts/
-          echo "Contents of artifacts subdirectories:"
-          find artifacts -type f
+          echo "Contents of artifacts directories:"
+          ls -la artifacts/macos-arm/
+          ls -la artifacts/linux-x86_64/
 
       - name: Prepare release files
         run: |
           mkdir -p release
-          # Find and copy the macOS ARM binary
-          find artifacts -name "wallet-decoder-aarch64-apple-darwin" -exec cp {} release/wallet-decoder-aarch64-apple-darwin \;
-          # Find and copy the Linux x86_64 binary
-          find artifacts -name "wallet-decoder-x86_64-unknown-linux-gnu" -exec cp {} release/wallet-decoder-x86_64-unknown-linux-gnu \;
+          # Copy each binary to the release directory
+          cp artifacts/macos-arm/wallet-decoder release/wallet-decoder-aarch64-apple-darwin
+          cp artifacts/linux-x86_64/wallet-decoder release/wallet-decoder-x86_64-unknown-linux-gnu
+          # Make them executable
+          chmod +x release/wallet-decoder-aarch64-apple-darwin
+          chmod +x release/wallet-decoder-x86_64-unknown-linux-gnu
 
       - name: List release files
         run: |
