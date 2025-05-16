@@ -1,66 +1,38 @@
-use std::env;
-use std::str::FromStr;
-use tari_common_types::tari_address::{TariAddress, TariAddressFeatures};
-use tari_utilities::hex::Hex;
+mod cli;
+mod wallet;
+mod address;
+
+use clap::Parser;
+use cli::{Args, Command};
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        println!("Usage: decode-address <tari_address>");
-        return;
-    }
+    let args = Args::parse();
 
-    let address_str = &args[1].trim();
-
-    match TariAddress::from_str(address_str) {
-        Ok(address) => {
-            println!("=== Tari Address Details ===");
-            println!("Base58: {}", address.to_base58());
-            println!("Emoji: {}", address.to_emoji_string());
-            println!("Hex: {}", address.to_hex());
-            println!("\n=== Binary Representation ===");
-            let bytes = address.to_vec();
-            println!("Raw bytes: {:02x?}", bytes);
-            println!("Length: {} bytes", bytes.len());
-
-            println!("\n=== Network Information ===");
-            println!("Network: {:?}", address.network());
-            println!("Network byte: 0x{:02x}", address.network().as_byte());
-
-            println!("\n=== Features ===");
-            let features = address.features();
-            println!("Features byte: 0x{:02x}", features.as_u8());
-            println!(
-                "One-sided: {}",
-                features.contains(TariAddressFeatures::ONE_SIDED)
-            );
-            println!(
-                "Interactive: {}",
-                features.contains(TariAddressFeatures::INTERACTIVE)
-            );
-            println!(
-                "Payment ID: {}",
-                features.contains(TariAddressFeatures::PAYMENT_ID)
-            );
-
-            println!("\n=== Key Information ===");
-            println!("Public Spend Key: {}", address.public_spend_key().to_hex());
-            if let Some(view_key) = address.public_view_key() {
-                println!("Public View Key: {}", view_key.to_hex());
-            }
-
-            println!("\n=== Address Type ===");
-            match address {
-                TariAddress::Single(_) => println!("Type: Single Address"),
-                TariAddress::Dual(_) => println!("Type: Dual Address"),
-            }
-
-            let payment_id = address.get_payment_id_user_data_bytes();
-            if !payment_id.is_empty() {
-                println!("\n=== Payment ID Data ===");
-                println!("Payment ID: {}", payment_id.to_hex());
+    match args.command {
+        Command::GenerateWallet { password, network } => {
+            match wallet::generate_wallet(password, network.clone()) {
+                Ok(wallet_info) => {
+                    println!("Wallet created successfully!");
+                    println!("\nSeed Words (SAVE THESE SECURELY):");
+                    println!("{}", wallet_info.seed_words);
+                    println!("\nView Key:");
+                    println!("{}", wallet_info.view_key);
+                    println!("\nSpend Key:");
+                    println!("{}", wallet_info.spend_key);
+                    println!("\nTari Address:");
+                    println!("{}", wallet_info.address.to_emoji_string());
+                    println!("\nTari Address (Base58):");
+                    println!("{}", wallet_info.address.to_base58());
+                    println!("\nNetwork: {}", wallet_info.network);
+                }
+                Err(e) => println!("Error generating wallet: {:#?}", e),
             }
         }
-        Err(e) => println!("Error decoding address: {:#?}", e),
+        Command::DecodeAddress { address } => {
+            match address::decode_address(&address) {
+                Ok(address) => address::print_address_details(&address),
+                Err(e) => println!("Error decoding address: {:#?}", e),
+            }
+        }
     }
 }
