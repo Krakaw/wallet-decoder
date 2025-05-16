@@ -23,17 +23,25 @@ jobs:
 
       - name: Build
         run: |
-          wasm-pack build --target web
+          echo "Building WASM module..."
+          wasm-pack build --target web --verbose
+          echo "Checking pkg directory contents..."
+          ls -la pkg/
+          echo "Copying index.html..."
           cp index.html pkg/
+          echo "Creating _redirects file..."
           echo '{
             "rewrites": [
               { "source": "**", "destination": "/index.html" }
             ]
           }' > pkg/_redirects
+          echo "Final pkg directory contents:"
+          ls -la pkg/
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: pkg
           branch: gh-pages
-          clean: true 
+          clean: true
+          commit-message: "Deploy WASM module and web interface" 
