@@ -8,30 +8,79 @@
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
+            background-color: #f8f9fa;
         }
         .input-group {
             margin-bottom: 20px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         input[type="text"] {
             width: 100%;
-            padding: 8px;
+            padding: 12px;
             margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
         }
         button {
-            padding: 8px 16px;
+            padding: 12px 24px;
             background-color: #4CAF50;
             color: white;
             border: none;
             cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background-color 0.3s;
         }
         button:hover {
             background-color: #45a049;
         }
-        #result {
+        .result-container {
+            margin-top: 20px;
+            max-height: 70vh;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        .result-item {
+            background-color: white;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .result-item h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .result-content {
+            font-family: monospace;
             white-space: pre-wrap;
-            background-color: #f5f5f5;
+            background-color: #f8f9fa;
             padding: 15px;
             border-radius: 4px;
+            margin-top: 10px;
+        }
+        .selectable {
+            cursor: pointer;
+            user-select: all;
+            padding: 2px 4px;
+            border-radius: 2px;
+            background-color: #e9ecef;
+        }
+        .selectable:hover {
+            background-color: #dee2e6;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -41,7 +90,7 @@
         <input type="text" id="address" placeholder="Enter Tari address">
         <button onclick="decodeAddress()">Decode Address</button>
     </div>
-    <div id="result"></div>
+    <div id="result" class="result-container"></div>
 
     <script type="module">
         import init, { decode_tari_address } from './wallet_decoder.js';
@@ -50,14 +99,37 @@
             try {
                 await init();
                 window.decodeTariAddress = decode_tari_address;
+                // Process any addresses from URL parameters
+                const urlParams = new URLSearchParams(window.location.search);
+                const addresses = urlParams.getAll('address');
+                if (addresses.length > 0) {
+                    for (const address of addresses) {
+                        await decodeAndDisplayAddress(address);
+                    }
+                }
             } catch (error) {
                 console.error('Failed to initialize WASM module:', error);
-                document.getElementById('result').textContent = 'Failed to initialize WASM module. Please check the console for details.';
+                document.getElementById('result').innerHTML = `
+                    <div class="error">
+                        Failed to initialize WASM module. Please check the console for details.
+                    </div>`;
             }
         }
 
-        window.decodeAddress = async function() {
-            const address = document.getElementById('address').value;
+        function formatResult(info) {
+            return Object.entries(info)
+                .map(([key, value]) => {
+                    if (typeof value === 'object' && value !== null && key !== 'raw_bytes') {
+                        return `${key}:\n${Object.entries(value)
+                            .map(([k, v]) => `  ${k}: <span class="selectable">${v}</span>`)
+                            .join('\n')}`;
+                    }
+                    return `${key}: <span class="selectable">${value ?? ''}</span>`;
+                })
+                .join('\n');
+        }
+
+        async function decodeAndDisplayAddress(address) {
             const resultDiv = document.getElementById('result');
             
             try {
@@ -65,11 +137,32 @@
                     throw new Error('WASM module not initialized');
                 }
                 const info = await window.decodeTariAddress(address);
-                resultDiv.textContent = JSON.stringify(info, null, 2);
+                
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <h3>Address: ${address}</h3>
+                    <div class="result-content">${formatResult(info)}</div>
+                `;
+                resultDiv.appendChild(resultItem);
             } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}`;
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <h3>Address: ${address}</h3>
+                    <div class="error">Error: ${error.message}</div>
+                `;
+                resultDiv.appendChild(resultItem);
                 console.error('Error decoding address:', error);
             }
+        }
+
+        window.decodeAddress = async function() {
+            const address = document.getElementById('address').value;
+            if (!address) return;
+            
+            await decodeAndDisplayAddress(address);
+            document.getElementById('address').value = '';
         };
 
         run();
