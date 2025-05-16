@@ -69,7 +69,8 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          find artifacts -type f -name "wallet-decoder" -exec cp {} release/wallet-decoder-$(basename $(dirname $(dirname {}))) \;
+          cp artifacts/wallet-decoder-aarch64-apple-darwin release/wallet-decoder-aarch64-apple-darwin
+          cp artifacts/wallet-decoder-x86_64-unknown-linux-gnu release/wallet-decoder-x86_64-unknown-linux-gnu
 
       - name: List release files
         run: ls -la release/
