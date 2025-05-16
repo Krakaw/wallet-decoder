@@ -1,89 +1,92 @@
 # Tari Wallet Decoder
 
-A command-line tool for decoding and analyzing Tari cryptocurrency addresses. This tool provides detailed information about Tari addresses including their binary representation, network information, features, and key details.
+A WebAssembly module for decoding Tari wallet addresses and extracting their information.
 
-## Features
+## Live Demo
 
-- Decode Tari addresses in Base58 format
-- Display address in multiple formats (Base58, Emoji, Hex)
-- Show binary representation and length
-- Display network information
-- List address features (One-sided, Interactive, Payment ID)
-- Show public spend and view keys
-- Identify address type (Single or Dual)
-- Display payment ID data if present
+Visit the [live demo](https://krakaw.github.io/wallet-decoder/) to try out the decoder.
 
-## Installation
+## Prerequisites
 
+- Rust and Cargo
+- wasm-pack (`cargo install wasm-pack`)
+- A web server (for local testing)
+
+## Local Development
+
+1. Install the required tools:
 ```bash
-git clone https://github.com/yourusername/wallet-decoder.git
-cd wallet-decoder
-cargo build --release
+cargo install wasm-pack
 ```
+
+2. Build the WebAssembly module:
+```bash
+wasm-pack build --target web
+```
+
+3. Serve the files using a web server. For example, using Python:
+```bash
+python3 -m http.server
+```
+
+4. Open `http://localhost:8000` in your web browser.
+
+## Deployment to GitHub Pages
+
+1. Fork this repository
+2. Enable GitHub Pages in your repository settings:
+   - Go to Settings > Pages
+   - Select the `gh-pages` branch as the source
+   - Click Save
+
+3. The GitHub Action will automatically build and deploy your site when you push to the main branch.
 
 ## Usage
 
-```bash
-cargo run -- <tari_address>
+The module exposes a single function `decode_tari_address` that takes a Tari address string and returns a JSON object with the following information:
+
+- `base58`: The address in base58 format
+- `emoji`: The address in emoji format
+- `hex`: The address in hexadecimal format
+- `raw_bytes`: The raw bytes of the address
+- `network`: The network type
+- `network_byte`: The network byte
+- `features`: Object containing address features
+  - `features_byte`: The features byte
+  - `one_sided`: Whether it's a one-sided address
+  - `interactive`: Whether it's an interactive address
+  - `payment_id`: Whether it has a payment ID
+- `public_spend_key`: The public spend key in hex
+- `public_view_key`: The public view key in hex (if present)
+- `address_type`: The type of address (Single or Dual)
+- `payment_id`: The payment ID in hex (if present)
+
+### JavaScript Example
+
+```javascript
+import init, { decode_tari_address } from './pkg/wallet_decoder.js';
+
+async function decodeAddress(address) {
+    try {
+        await init();
+        const info = await decode_tari_address(address);
+        console.log(info);
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
 ```
 
-### Example
+## Development
 
-```bash
-cargo run -- "143BKvG9pF8uSpB2JrB6myLMJLjjjrAPzcUyaBWpWoYW3x3Vv1EncTVTSGpdRhvucBzGisRj17tQyfg6vkGWKGjvUxZ"
-```
+The project is structured as follows:
 
-### Example Output
-
-```
-=== Tari Address Details ===
-Base58: 143BKvG9pF8uSpB2JrB6myLMJLjjjrAPzcUyaBWpWoYW3x3Vv1EncTVTSGpdRhvucBzGisRj17tQyfg6vkGWKGjvUxZ
-Emoji: 🐢🌊🍇💉🙈📖💋🎠🔦💉🦁👣🚫🍊🎂🚨🏠🐜📿🌽💯🐭🚫🚨🍁🍦🍭🐘🐸👂🚓💻🎯🎺🎤💨🚦🐬🎁🧲💼🐙🐬🍪🐔👾📜🌹🍞👟👶👣🚓🐬🏠🍊💻🎷🌕🚀🎬👞👞🌙🍵🍋🤠
-Hex: 000318ae74cab046d6ae70a5fb1b3ff9667acb12bf83fbf9142c31768db1f2c4045b4abcf7823effc577822e73a9c71028a1eba5f282661bc45808ec50a0a006361caa
-
-=== Binary Representation ===
-Raw bytes: [00, 03, 18, ae, 74, ca, b0, 46, d6, ae, 70, a5, fb, 1b, 3f, f9, 66, 7a, cb, 12, bf, 83, fb, f9, 14, 2c, 31, 76, 8d, b1, f2, c4, 04, 5b, 4a, bc, f7, 82, 3e, ff, c5, 77, 82, 2e, 73, a9, c7, 10, 28, a1, eb, a5, f2, 82, 66, 1b, c4, 58, 08, ec, 50, a0, a0, 06, 36, 1c, aa]
-Length: 67 bytes
-
-=== Network Information ===
-Network: MainNet
-Network byte: 0x00
-
-=== Features ===
-Features byte: 0x03
-One-sided: true
-Interactive: true
-Payment ID: false
-
-=== Key Information ===
-Public Spend Key: 4abcf7823effc577822e73a9c71028a1eba5f282661bc45808ec50a0a006361c
-Public View Key: 18ae74cab046d6ae70a5fb1b3ff9667acb12bf83fbf9142c31768db1f2c4045b
-
-=== Address Type ===
-Type: Dual Address
-```
-
-## Output Explanation
-
-The tool provides several sections of information:
-
-1. **Tari Address Details**: Shows the address in Base58, Emoji, and Hex formats
-2. **Binary Representation**: Displays the raw bytes and total length
-3. **Network Information**: Shows the network type (MainNet/TestNet) and network byte
-4. **Features**: Lists enabled features (One-sided, Interactive, Payment ID)
-5. **Key Information**: Shows the public spend and view keys
-6. **Address Type**: Indicates whether it's a Single or Dual address
-7. **Payment ID Data**: (Optional) Shows payment ID data if present
-
-## Requirements
-
-- Rust 1.56.0 or later
-- Cargo package manager
+- `src/lib.rs`: Contains the main WASM module code
+- `index.html`: A simple web interface for testing the decoder
+- `Cargo.toml`: Project dependencies and configuration
+- `.github/workflows/deploy.yml`: GitHub Actions workflow for automatic deployment
+- `deploy.sh`: Script for local deployment testing
 
 ## License
 
-[Add your license here]
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. 
+This project is licensed under the MIT License. 
