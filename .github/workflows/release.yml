@@ -66,14 +66,22 @@ jobs:
           echo "Contents of artifacts subdirectories:"
           find artifacts -type f
 
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find artifacts -type f -name "wallet-decoder" -exec cp {} release/wallet-decoder-$(basename $(dirname $(dirname {}))) \;
+
+      - name: List release files
+        run: ls -la release/
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           files: |
-            artifacts/wallet-decoder-aarch64-apple-darwin
-            artifacts/wallet-decoder-x86_64-unknown-linux-gnu
+            release/wallet-decoder-aarch64-apple-darwin
+            release/wallet-decoder-x86_64-unknown-linux-gnu
           draft: false
           prerelease: false
         env:
