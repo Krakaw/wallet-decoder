@@ -1,7 +1,10 @@
 use std::env;
 use std::str::FromStr;
 use tari_common_types::tari_address::{TariAddress, TariAddressFeatures};
+use tari_key_manager::cipher_seed::CipherSeed;
 use tari_utilities::hex::Hex;
+use tari_key_manager::{SeedWords, mnemonic::Mnemonic};
+use tari_key_manager::key_manager::KeyManager;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -11,6 +14,14 @@ fn main() {
     }
 
     let address_str = &args[1].trim();
+
+    let seed_words = SeedWords::from_str(address_str).unwrap();
+    let cipher_seed = CipherSeed::from_mnemonic(&seed_words, None).unwrap();
+    let master_key = cipher_seed.derive_master_key()?;
+    let address = TariAddress::from_public_key(&master_key.public_key())?;
+
+    println!("Seed words: {:?}", address);
+    
 
     match TariAddress::from_str(address_str) {
         Ok(address) => {

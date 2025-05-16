@@ -6,5 +6,6 @@ edition = "2024"
 [dependencies]
 tari_common_types = { git = "https://github.com/tari-project/tari", branch = "development" }
 tari_utilities = { version = "0.8" }
+tari_key_manager = { git = "https://github.com/tari-project/tari", branch = "development" }
 
 
