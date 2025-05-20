@@ -12,6 +12,9 @@
             background-color: #f8f9fa;
             position: relative;
         }
+        * {
+            box-sizing: border-box;
+        }
         .github-links {
             position: absolute;
             top: 20px;
@@ -23,14 +26,14 @@
         .input-group {
             margin-bottom: 20px;
             background-color: white;
-            padding: 20px;
+            padding: 25px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         input[type="text"] {
             width: 100%;
-            padding: 12px;
-            margin-bottom: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 14px;
@@ -56,8 +59,8 @@
         }
         .result-item {
             background-color: white;
-            padding: 20px;
-            margin-bottom: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
@@ -65,15 +68,20 @@
             margin-top: 0;
             color: #333;
             border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+            word-break: break-all;
+            overflow-wrap: break-word;
         }
         .result-content {
             font-family: monospace;
             white-space: pre-wrap;
+            word-break: break-all;
+            overflow-wrap: break-word;
             background-color: #f8f9fa;
-            padding: 15px;
+            padding: 20px;
             border-radius: 4px;
-            margin-top: 10px;
+            margin-top: 15px;
         }
         .selectable {
             cursor: pointer;
@@ -81,6 +89,8 @@
             padding: 2px 4px;
             border-radius: 2px;
             background-color: #e9ecef;
+            word-break: break-all;
+            overflow-wrap: break-word;
         }
         .selectable:hover {
             background-color: #dee2e6;
@@ -111,12 +121,16 @@
     <h1>Tari Address Decoder</h1>
     <div class="input-group">
         <input type="text" id="address" placeholder="Enter Tari address">
-        <button onclick="decodeAddress()">Decode Address</button>
+        <button onclick="makePermanent()">Add to Results</button>
     </div>
+    <div id="preview" class="result-container" style="opacity: 0.7;"></div>
     <div id="result" class="result-container"></div>
 
     <script type="module">
         import init, { decode_tari_address } from './wallet_decoder.js';
+
+        let currentPreview = null;
+        let debounceTimer = null;
 
         async function run() {
             try {
@@ -127,15 +141,88 @@
                 const addresses = urlParams.getAll('address');
                 if (addresses.length > 0) {
                     for (const address of addresses) {
-                        await decodeAndDisplayAddress(address);
+                        await decodeAndDisplayAddress(address, true);
                     }
                 }
+                // Add input event listener for live preview
+                document.getElementById('address').addEventListener('input', handleInput);
             } catch (error) {
                 console.error('Failed to initialize WASM module:', error);
                 document.getElementById('result').innerHTML = `
                     <div class="error">
                         Failed to initialize WASM module. Please check the console for details.
                     </div>`;
+            }
+        }
+
+        function handleInput(event) {
+            const address = event.target.value;
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = setTimeout(() => {
+                if (address) {
+                    decodeAndDisplayAddress(address, false);
+                } else {
+                    clearPreview();
+                }
+            }, 300); // 300ms debounce
+        }
+
+        function clearPreview() {
+            const previewDiv = document.getElementById('preview');
+            previewDiv.innerHTML = '';
+            currentPreview = null;
+        }
+
+        window.makePermanent = async function() {
+            const address = document.getElementById('address').value;
+            if (!address) return;
+            
+            await decodeAndDisplayAddress(address, true);
+            document.getElementById('address').value = '';
+            clearPreview();
+        };
+
+        async function decodeAndDisplayAddress(address, isPermanent) {
+            const targetDiv = isPermanent ? document.getElementById('result') : document.getElementById('preview');
+            
+            try {
+                if (!window.decodeTariAddress) {
+                    throw new Error('WASM module not initialized');
+                }
+                const info = await window.decodeTariAddress(address);
+                
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <h3>Address: ${address}</h3>
+                    <div class="result-content">${formatResult(info)}</div>
+                `;
+
+                if (isPermanent) {
+                    targetDiv.insertBefore(resultItem, targetDiv.firstChild);
+                } else {
+                    clearPreview();
+                    targetDiv.appendChild(resultItem);
+                    currentPreview = resultItem;
+                }
+            } catch (error) {
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <h3>Address: ${address}</h3>
+                    <div class="error">Error: ${error.message}</div>
+                `;
+
+                if (isPermanent) {
+                    targetDiv.insertBefore(resultItem, targetDiv.firstChild);
+                } else {
+                    clearPreview();
+                    targetDiv.appendChild(resultItem);
+                    currentPreview = resultItem;
+                }
+                console.error('Error decoding address:', error);
             }
         }
 
@@ -151,42 +238,6 @@
                 })
                 .join('\n');
         }
-
-        async function decodeAndDisplayAddress(address) {
-            const resultDiv = document.getElementById('result');
-            
-            try {
-                if (!window.decodeTariAddress) {
-                    throw new Error('WASM module not initialized');
-                }
-                const info = await window.decodeTariAddress(address);
-                
-                const resultItem = document.createElement('div');
-                resultItem.className = 'result-item';
-                resultItem.innerHTML = `
-                    <h3>Address: ${address}</h3>
-                    <div class="result-content">${formatResult(info)}</div>
-                `;
-                resultDiv.appendChild(resultItem);
-            } catch (error) {
-                const resultItem = document.createElement('div');
-                resultItem.className = 'result-item';
-                resultItem.innerHTML = `
-                    <h3>Address: ${address}</h3>
-                    <div class="error">Error: ${error.message}</div>
-                `;
-                resultDiv.appendChild(resultItem);
-                console.error('Error decoding address:', error);
-            }
-        }
-
-        window.decodeAddress = async function() {
-            const address = document.getElementById('address').value;
-            if (!address) return;
-            
-            await decodeAndDisplayAddress(address);
-            document.getElementById('address').value = '';
-        };
 
         run();
     </script>
