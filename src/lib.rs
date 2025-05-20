@@ -3,6 +3,7 @@ use tari_common_types::tari_address::{TariAddress, TariAddressFeatures};
 use tari_utilities::{hex::Hex};
 use wasm_bindgen::prelude::*;
 use serde::{Serialize, Deserialize};
+mod utils;
 
 #[derive(Serialize, Deserialize)]
 pub struct AddressInfo {
@@ -17,6 +18,7 @@ pub struct AddressInfo {
     public_view_key: Option<String>,
     address_type: String,
     payment_id: Option<String>,
+    payment_id_ascii: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -51,7 +53,6 @@ pub fn decode_tari_address(address_str: &str) -> Result<JsValue, JsError> {
         base58: address.to_base58(),
         emoji: address.to_emoji_string(),
         hex: address.to_hex(),
-        raw_bytes: address.to_vec(),
         network: format!("{:?}", address.network()),
         network_byte: address.network().as_byte(),
         features: features_info,
@@ -69,6 +70,15 @@ pub fn decode_tari_address(address_str: &str) -> Result<JsValue, JsError> {
                 Some(payment_id.to_hex())
             }
         },
+        payment_id_ascii: {
+            let payment_id = address.get_payment_id_user_data_bytes();
+            if payment_id.is_empty() {
+                None
+            } else {
+                Some(utils::bytes_to_ascii_string(&payment_id))
+            }
+        },
+        raw_bytes: address.to_vec(),
     };
 
     Ok(serde_wasm_bindgen::to_value(&info)?)
