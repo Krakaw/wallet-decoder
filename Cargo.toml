@@ -1,7 +1,7 @@
 [package]
 name = "wallet-decoder"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -26,4 +26,8 @@ clap = { version = "4.4", features = ["derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
 
