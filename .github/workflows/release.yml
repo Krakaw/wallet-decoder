@@ -35,6 +35,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+      - name: Install protobuf compiler (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install protobuf
+
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
