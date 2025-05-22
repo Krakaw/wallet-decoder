@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use serde::Serialize;
 use tari_common::configuration::Network;
-use tari_common_types::tari_address::{TariAddress};
+use tari_common_types::tari_address::TariAddress;
 use tari_core::transactions::transaction_key_manager::key_manager::{
     DerivedPublicKey, TariKeyManager,
 };
@@ -104,7 +104,7 @@ pub fn load_wallet_from_seed_phrase(
         spend_key.key.clone(),
         network_type,
     )?;
-   
+
     Ok(WalletInfo {
         seed_words: seed_phrase.to_string(),
         view_key: view_key.key.to_string(),
@@ -234,5 +234,25 @@ mod tests {
                 _ => panic!("Unexpected network"),
             }
         }
+    }
+
+    #[test]
+    fn test_wallet_with_known_values() {
+        let seed_phrase = "gate egg ticket brisk steel chef more mean blouse busy always slow oppose leaf possible lottery cruel penalty sheriff acid media extend train enable";
+        let expected_view_key = "375ce00ddadcfde47128858730a12a2e7ef33a4ce5ceafd3dd689324b1c7a10c";
+        let expected_spend_key = "2ab1c61a811588a3fa346a6deda0df936e5a17db0ab8b0d96638e81552c3877d";
+        let expected_interactive_address = "347ZTThqvfgmwidceBgNbLcP6AAjQPWxtjAExfBFrLcWRf8KSWtP8BGWEZ8UQWtpSQQNBijpfJMXEByTRTV38f7JMND";
+        let expected_interactive_emoji = "🌈🌊🎤🎲🎡🍐🔭🌸😷💼🐯🔱💐👃🐍🌹🍋💰🍣🐾🐵🐾💤🍗💎👙⭐🌹🎪💎🐴🏥🎮🌸🥝👂📈🍉🐪🍄🦂🥊🚪🍳🏰🐊🚁👞🔱👀🐌🎹🍆🔫🎋💡💋🔩🏠🍷😷🍄🎮💺🦆🦋🍗";
+
+        // Test loading the wallet from seed phrase
+        let loaded =
+            load_wallet_from_seed_phrase(seed_phrase, "nextnet".to_string(), None).unwrap();
+
+        // Verify the loaded wallet matches the expected values
+        assert_eq!(loaded.seed_words, seed_phrase);
+        assert_eq!(loaded.view_key, expected_view_key);
+        assert_eq!(loaded.spend_key, expected_spend_key);
+        assert_eq!(loaded.address.to_base58(), expected_interactive_address);
+        assert_eq!(loaded.emoji, expected_interactive_emoji);
     }
 }
