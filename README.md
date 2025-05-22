@@ -1,6 +1,14 @@
 # Tari Wallet Decoder
 
-A WebAssembly-based tool for decoding Tari wallet addresses. This project provides both web and Node.js examples of how to use the decoder.
+A WebAssembly-based tool for decoding Tari wallet addresses and managing Tari wallets. This project provides both web and Node.js examples of how to use the decoder.
+
+## Features
+
+- Generate new Tari wallets
+- Load existing wallets from seed phrases
+- Decode Tari addresses
+- Support for multiple networks (mainnet, nextnet, esmeralda)
+- Password protection for wallets
 
 ## Building
 
@@ -14,7 +22,47 @@ wasm-pack build --target web
 wasm-pack build --target nodejs
 ```
 
-## Examples
+## Usage
+
+### Command Line Interface
+
+The tool provides a command-line interface with the following commands:
+
+1. Generate a new wallet:
+```bash
+wallet-decoder generate-wallet [--password <PASSWORD>] [--network <NETWORK>]
+```
+
+2. Load a wallet from seed phrase:
+```bash
+wallet-decoder load-seed-phrase <SEED_PHRASE> [--password <PASSWORD>] [--network <NETWORK>]
+```
+
+3. Decode a Tari address:
+```bash
+wallet-decoder decode-address <ADDRESS>
+```
+
+Options:
+- `--password`: Optional password for wallet encryption
+- `--network`: Network to use (mainnet, nextnet, esmeralda). Defaults to mainnet
+
+### Examples
+
+Generate a new wallet:
+```bash
+wallet-decoder generate-wallet --network mainnet
+```
+
+Load a wallet from seed phrase:
+```bash
+wallet-decoder load-seed-phrase "your seed phrase here" --network mainnet
+```
+
+Decode an address:
+```bash
+wallet-decoder decode-address "143BKvG9pF8uSpB2JrB6myLMJLjjjrAPzcUyaBWpWoYW3x3Vv1EncTVTSGpdRhvucBzGisRj17tQyfg6vkGWKGjvUxZ"
+```
 
 ### Web Example
 
@@ -78,7 +126,10 @@ The example will decode a sample Tari address and display the decoded informatio
 ```
 .
 ├── src/
-│   └── lib.rs           # Core Rust implementation
+│   ├── lib.rs           # Core Rust implementation
+│   ├── wallet.rs        # Wallet management functionality
+│   ├── address.rs       # Address decoding functionality
+│   └── utils.rs         # Utility functions
 ├── examples/
 │   ├── web/            # Web example
 │   │   ├── index.html  # Web interface
@@ -124,67 +175,6 @@ python3 -m http.server
 ```
 
 5. Open `http://localhost:8000` in your web browser.
-
-## Deployment
-
-The project is automatically deployed to GitHub Pages when changes are pushed to the main branch. The deployment process:
-
-1. Builds the WASM module
-2. Copies the built files to the docs directory
-3. Deploys the contents to the gh-pages branch
-
-To enable GitHub Pages:
-1. Go to your repository settings
-2. Navigate to "Pages" in the sidebar
-3. Select "Deploy from a branch" as the source
-4. Select the "gh-pages" branch and "/docs (docs)" folder
-5. Click Save
-
-## Usage
-
-The module exposes a single function `decode_tari_address` that takes a Tari address string and returns a JSON object with the following information:
-
-- `base58`: The address in base58 format
-- `emoji`: The address in emoji format
-- `hex`: The address in hexadecimal format
-- `raw_bytes`: The raw bytes of the address
-- `network`: The network type
-- `network_byte`: The network byte
-- `features`: Object containing address features
-  - `features_byte`: The features byte
-  - `one_sided`: Whether it's a one-sided address
-  - `interactive`: Whether it's an interactive address
-  - `payment_id`: Whether it has a payment ID
-- `public_spend_key`: The public spend key in hex
-- `public_view_key`: The public view key in hex (if present)
-- `address_type`: The type of address (Single or Dual)
-- `payment_id`: The payment ID in hex (if present)
-
-### JavaScript Example
-
-```javascript
-import init, { decode_tari_address } from './wallet_decoder.js';
-
-async function decodeAddress(address) {
-    try {
-        await init();
-        const info = await decode_tari_address(address);
-        console.log(info);
-    } catch (error) {
-        console.error('Error:', error);
-    }
-}
-```
-
-## Development
-
-The project is structured as follows:
-
-- `src/lib.rs`: Contains the main WASM module code
-- `index.html`: A simple web interface for testing the decoder
-- `Cargo.toml`: Project dependencies and configuration
-- `.github/workflows/deploy.yml`: GitHub Actions workflow for automatic deployment
-- `docs/`: Directory containing the built files for deployment
 
 ## License
 

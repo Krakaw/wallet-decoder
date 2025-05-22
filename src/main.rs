@@ -35,5 +35,24 @@ fn main() {
                 Err(e) => println!("Error decoding address: {:#?}", e),
             }
         }
+        Command::LoadSeedPhrase { seed_phrase, network, password } => {
+            match  wallet::load_wallet_from_seed_phrase(&seed_phrase, network.clone(), password) {
+                Ok(wallet_info) => {
+                    println!("Wallet loaded successfully!");
+                    println!("\nSeed Words:");
+                    println!("{}", wallet_info.seed_words);
+                    println!("\nView Key:");
+                    println!("{}", wallet_info.view_key);
+                    println!("\nSpend Key:");
+                    println!("{}", wallet_info.spend_key);
+                    println!("\nTari Address:");
+                    println!("{}", wallet_info.address.to_emoji_string());
+                    println!("\nTari Address (Base58):");
+                    println!("{}", wallet_info.address.to_base58());
+                    println!("\nNetwork: {}", wallet_info.network);
+                }
+                Err(e) => println!("Error loading wallet: {:#?}", e),
+            }
+        }
     }
 }

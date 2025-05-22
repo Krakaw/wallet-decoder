@@ -26,4 +26,17 @@ pub enum Command {
         /// The Tari address to decode
         address: String,
     },
+    /// Load a seed phrase and output addresses
+    LoadSeedPhrase {
+        /// The seed phrase to load (space-separated words)
+        seed_phrase: String,
+
+        /// Optional password for the wallet
+        #[clap(long)]
+        password: Option<SafePassword>,
+
+        /// Network to use (default: mainnet)
+        #[clap(long, default_value = "mainnet")]
+        network: String,
+    },
 } 
