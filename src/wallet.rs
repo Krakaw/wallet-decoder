@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use serde::Serialize;
 use tari_common::configuration::Network;
-use tari_common_types::tari_address::{TariAddress, TariAddressFeatures};
+use tari_common_types::tari_address::{TariAddress};
 use tari_core::transactions::transaction_key_manager::key_manager::{
     DerivedPublicKey, TariKeyManager,
 };
