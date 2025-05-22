@@ -9,7 +9,8 @@
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
-            background-color: #f8f9fa;
+            background-color: #202326;
+            color: #e0e0e0;
             position: relative;
         }
         * {
@@ -20,23 +21,31 @@
             top: 20px;
             right: 20px;
             display: flex;
-            align-items: center;
+            align-items: right;
             gap: 10px;
+        }
+        .github-links a {
+            color: #e0e0e0;
         }
         .input-group {
             margin-bottom: 20px;
-            background-color: white;
+            background-color: #2d2d2d;
             padding: 25px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         input[type="text"] {
             width: 100%;
             padding: 15px;
             margin-bottom: 15px;
-            border: 1px solid #ddd;
+            border: 1px solid #404040;
             border-radius: 4px;
             font-size: 14px;
+            background-color: #333;
+            color: #e0e0e0;
+        }
+        input[type="text"]::placeholder {
+            color: #888;
         }
         button {
             padding: 12px 24px;
@@ -58,16 +67,16 @@
             padding-right: 10px;
         }
         .result-item {
-            background-color: white;
+            background-color: #2d2d2d;
             padding: 25px;
             margin-bottom: 20px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         .result-item h3 {
             margin-top: 0;
-            color: #333;
-            border-bottom: 1px solid #eee;
+            color: #e0e0e0;
+            border-bottom: 1px solid #404040;
             padding-bottom: 15px;
             margin-bottom: 15px;
             word-break: break-all;
@@ -78,29 +87,45 @@
             white-space: pre-wrap;
             word-break: break-all;
             overflow-wrap: break-word;
-            background-color: #f8f9fa;
+            background-color: #333;
             padding: 20px;
             border-radius: 4px;
             margin-top: 15px;
+            color: #e0e0e0;
         }
         .selectable {
             cursor: pointer;
             user-select: all;
             padding: 2px 4px;
             border-radius: 2px;
-            background-color: #e9ecef;
+            background-color: #404040;
             word-break: break-all;
             overflow-wrap: break-word;
         }
         .selectable:hover {
-            background-color: #dee2e6;
+            background-color: #505050;
         }
         .error {
-            color: #dc3545;
-            background-color: #f8d7da;
+            color: #ff6b6b;
+            background-color: #3d1f1f;
             padding: 10px;
             border-radius: 4px;
             margin-top: 10px;
+        }
+        .banner {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 20px;
+        }
+        .banner img {
+            height: 80px;
+            width: 80px;
+            object-fit: contain;
+        }
+        .banner h1 {
+            margin: 0;
+            color: #e0e0e0;
         }
     </style>
 </head>
@@ -108,7 +133,6 @@
     <div class="github-links">
         <a href="https://github.com/Krakaw/wallet-decoder" target="_blank" style="text-decoration: none; color: #333;">
             <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub" style="height: 20px; vertical-align: middle;">
-            View on GitHub
         </a>
         <iframe src="https://ghbtns.com/github-btn.html?user=Krakaw&repo=wallet-decoder&type=star&count=false" 
                 frameborder="0" 
@@ -118,9 +142,12 @@
                 title="GitHub">
         </iframe>
     </div>
-    <h1>Tari Address Decoder</h1>
+    <div class="banner">
+        <img src="icon.png" alt="Tari Icon">
+        <h1>Tari Address Decoder</h1>
+    </div>
     <div class="input-group">
-        <input type="text" id="address" placeholder="Enter Tari address">
+        <input type="text" id="address" placeholder="Enter Tari address" autofocus>
         <button onclick="makePermanent()">Add to Results</button>
     </div>
     <div id="preview" class="result-container" style="opacity: 0.7;"></div>
@@ -145,7 +172,14 @@
                     }
                 }
                 // Add input event listener for live preview
-                document.getElementById('address').addEventListener('input', handleInput);
+                const addressInput = document.getElementById('address');
+                addressInput.addEventListener('input', handleInput);
+                // Add keydown event listener for Enter key
+                addressInput.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        makePermanent();
+                    }
+                });
             } catch (error) {
                 console.error('Failed to initialize WASM module:', error);
                 document.getElementById('result').innerHTML = `
