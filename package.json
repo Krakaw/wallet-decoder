@@ -1,7 +1,10 @@
 {
   "name": "wallet-decoder",
   "type": "module",
-  "version": "0.1.4",
+  "collaborators": [
+    "Krakaw"
+  ],
+  "version": "0.1.5",
   "files": [
     "wallet_decoder_bg.wasm",
     "wallet_decoder.js",
