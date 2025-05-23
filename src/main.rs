@@ -16,8 +16,10 @@ fn main() {
                     println!("Wallet created successfully!");
                     println!("\nSeed Words (SAVE THESE SECURELY):");
                     println!("{}", wallet_info.seed_words);
-                    println!("\nView Key:");
+                    println!("\nPrivate View Key:");
                     println!("{}", wallet_info.view_key);
+                    println!("\nPublic View Key:");
+                    println!("{:?}", wallet_info.address.public_view_key());
                     println!("\nSpend Key:");
                     println!("{}", wallet_info.spend_key);
                     println!("\nTari Address:");
@@ -41,8 +43,10 @@ fn main() {
                     println!("Wallet loaded successfully!");
                     println!("\nSeed Words:");
                     println!("{}", wallet_info.seed_words);
-                    println!("\nView Key:");
+                    println!("\nPrivate View Key:");
                     println!("{}", wallet_info.view_key);
+                    println!("\nPublic View Key:");
+                    println!("{:?}", wallet_info.address.public_view_key());
                     println!("\nSpend Key:");
                     println!("{}", wallet_info.spend_key);
                     println!("\nTari Address:");
@@ -50,8 +54,6 @@ fn main() {
                     println!("\nTari Address (Base58):");
                     println!("{}", wallet_info.address.to_base58());
                     println!("\nNetwork: {}", wallet_info.network);
-                    println!("\nPublic View Key:");
-                    println!("{:?}", wallet_info.address.public_view_key());
                 }
                 Err(e) => println!("Error loading wallet: {:#?}", e),
             }
