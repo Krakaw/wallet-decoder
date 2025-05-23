@@ -4,7 +4,7 @@ use serde::Serialize;
 use tari_common::configuration::Network;
 use tari_common_types::tari_address::TariAddress;
 use tari_core::transactions::transaction_key_manager::key_manager::{
-    DerivedPublicKey, TariKeyManager,
+    DerivedPublicKey, TariKeyManager, 
 };
 use tari_key_manager::{
     SeedWords,
@@ -12,7 +12,7 @@ use tari_key_manager::{
     key_manager_service::{KeyDigest, KeyManagerBranch},
     mnemonic::{Mnemonic, MnemonicLanguage},
 };
-use tari_utilities::SafePassword;
+use tari_utilities::{  SafePassword, hex::Hex,};
 
 #[derive(Serialize)]
 pub struct WalletInfo {
@@ -24,15 +24,20 @@ pub struct WalletInfo {
     pub emoji: String,
 }
 
-fn generate_public_key_pair(seed: CipherSeed) -> (DerivedPublicKey, DerivedPublicKey) {
-    // Create key managers for view and spend keys
-    let view_key_manager = TariKeyManager::<KeyDigest>::from(
+pub fn get_key_manager(seed:CipherSeed, branch_key:String) -> TariKeyManager<KeyDigest> {
+    TariKeyManager::<KeyDigest>::from(
         seed.clone(),
-        "data encryption".to_string(), // Extracted this from "tari/base_layer/common_types/src/lib.rs" @TODO Fix the base_layer/key_manager/src/key_manager_service/interface.rs in the tari repo.
+        branch_key,
         0,
-    );
-    let spend_key_manager =
-        TariKeyManager::<KeyDigest>::from(seed, KeyManagerBranch::Comms.get_branch_key(), 0);
+    )
+}
+
+fn generate_keys(seed: CipherSeed) -> (DerivedPublicKey, DerivedPublicKey, String) {
+    // Create key managers for view and spend keys
+    let view_key_manager = get_key_manager(seed.clone(), "data encryption".to_string());
+    let spend_key_manager = get_key_manager(seed, KeyManagerBranch::Comms.get_branch_key());
+
+
 
     // Derive the view and spend keys
     let view_key = view_key_manager
@@ -41,8 +46,9 @@ fn generate_public_key_pair(seed: CipherSeed) -> (DerivedPublicKey, DerivedPubli
     let spend_key = spend_key_manager
         .derive_public_key(0)
         .expect("Failed to derive spend key");
+    let private_view_key = view_key_manager.get_private_key(0).expect("Failed to derive view key");
 
-    (view_key, spend_key)
+    (view_key, spend_key, private_view_key.to_hex())
 }
 
 pub fn generate_wallet(
@@ -59,7 +65,7 @@ pub fn generate_wallet(
         .join(" ");
     let seed_words = seed_words.reveal().clone();
 
-    let (view_key, spend_key) = generate_public_key_pair(seed);
+    let (view_key, spend_key, private_view_key) = generate_keys(seed);
 
     let network_type = Network::from_str(&network).unwrap_or(Network::MainNet);
 
@@ -74,7 +80,7 @@ pub fn generate_wallet(
 
     Ok(WalletInfo {
         seed_words,
-        view_key: view_key.key.to_string(),
+        view_key: private_view_key,
         spend_key: spend_key.key.to_string(),
         address: tari_address.clone(),
         network,
@@ -95,7 +101,7 @@ pub fn load_wallet_from_seed_phrase(
     let seed = CipherSeed::from_mnemonic(&seed_words, password)
         .map_err(|e| anyhow::anyhow!("Failed to create cipher seed: {}", e))?;
 
-    let (view_key, spend_key) = generate_public_key_pair(seed);
+    let (view_key, spend_key, private_view_key) = generate_keys(seed.clone());
 
     let network_type = Network::from_str(&network).unwrap_or(Network::MainNet);
 
@@ -107,7 +113,7 @@ pub fn load_wallet_from_seed_phrase(
 
     Ok(WalletInfo {
         seed_words: seed_phrase.to_string(),
-        view_key: view_key.key.to_string(),
+        view_key: private_view_key,
         spend_key: spend_key.key.to_string(),
         address: address.clone(),
         network,
@@ -248,10 +254,12 @@ mod tests {
         let loaded =
             load_wallet_from_seed_phrase(seed_phrase, "nextnet".to_string(), None).unwrap();
 
+
         // Verify the loaded wallet matches the expected values
         assert_eq!(loaded.seed_words, seed_phrase);
         assert_eq!(loaded.view_key, expected_view_key);
         assert_eq!(loaded.spend_key, expected_spend_key);
+        assert_eq!(loaded.network, "nextnet");
         assert_eq!(loaded.address.to_base58(), expected_interactive_address);
         assert_eq!(loaded.emoji, expected_interactive_emoji);
     }

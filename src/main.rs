@@ -50,6 +50,8 @@ fn main() {
                     println!("\nTari Address (Base58):");
                     println!("{}", wallet_info.address.to_base58());
                     println!("\nNetwork: {}", wallet_info.network);
+                    println!("\nPublic View Key:");
+                    println!("{:?}", wallet_info.address.public_view_key());
                 }
                 Err(e) => println!("Error loading wallet: {:#?}", e),
             }

@@ -4246,6 +4246,7 @@ name = "wallet-decoder"
 version = "0.1.5"
 dependencies = [
  "anyhow",
+ "bs58 0.5.1",
  "clap 4.5.38",
  "getrandom 0.2.16",
  "js-sys",
