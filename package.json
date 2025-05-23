@@ -4,7 +4,7 @@
   "collaborators": [
     "Krakaw"
   ],
-  "version": "0.1.5",
+  "version": "0.1.6",
   "files": [
     "wallet_decoder_bg.wasm",
     "wallet_decoder.js",
