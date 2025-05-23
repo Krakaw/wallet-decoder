@@ -16,6 +16,7 @@ use tari_utilities::{  SafePassword, hex::Hex,};
 
 #[derive(Serialize)]
 pub struct WalletInfo {
+    pub birthday: u16,
     pub seed_words: String,
     pub view_key: String,
     pub spend_key: String,
@@ -64,6 +65,7 @@ pub fn generate_wallet(
         .expect("Failed to generate seed words")
         .join(" ");
     let seed_words = seed_words.reveal().clone();
+    let birthday = seed.birthday();
 
     let (view_key, spend_key, private_view_key) = generate_keys(seed);
 
@@ -79,6 +81,7 @@ pub fn generate_wallet(
     .expect("Failed to create Tari address");
 
     Ok(WalletInfo {
+        birthday,
         seed_words,
         view_key: private_view_key,
         spend_key: spend_key.key.to_string(),
@@ -101,6 +104,7 @@ pub fn load_wallet_from_seed_phrase(
     let seed = CipherSeed::from_mnemonic(&seed_words, password)
         .map_err(|e| anyhow::anyhow!("Failed to create cipher seed: {}", e))?;
 
+    let birthday = seed.birthday();
     let (view_key, spend_key, private_view_key) = generate_keys(seed.clone());
 
     let network_type = Network::from_str(&network).unwrap_or(Network::MainNet);
@@ -112,6 +116,7 @@ pub fn load_wallet_from_seed_phrase(
     )?;
 
     Ok(WalletInfo {
+        birthday,
         seed_words: seed_phrase.to_string(),
         view_key: private_view_key,
         spend_key: spend_key.key.to_string(),

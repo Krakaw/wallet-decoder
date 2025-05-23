@@ -27,6 +27,7 @@ fn main() {
                     println!("\nTari Address (Base58):");
                     println!("{}", wallet_info.address.to_base58());
                     println!("\nNetwork: {}", wallet_info.network);
+                    println!("\nBirthday: {}", wallet_info.birthday);
                 }
                 Err(e) => println!("Error generating wallet: {:#?}", e),
             }
@@ -54,6 +55,8 @@ fn main() {
                     println!("\nTari Address (Base58):");
                     println!("{}", wallet_info.address.to_base58());
                     println!("\nNetwork: {}", wallet_info.network);
+                    println!("\nBirthday: {}", wallet_info.birthday);
+
                 }
                 Err(e) => println!("Error loading wallet: {:#?}", e),
             }
