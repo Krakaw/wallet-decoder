@@ -19,13 +19,17 @@ fn main() {
                     println!("\nPrivate View Key:");
                     println!("{}", wallet_info.view_key);
                     println!("\nPublic View Key:");
-                    println!("{:?}", wallet_info.address.public_view_key());
+                    println!("{:?}", wallet_info.interactive_address.public_view_key());
                     println!("\nSpend Key:");
                     println!("{}", wallet_info.spend_key);
-                    println!("\nTari Address:");
-                    println!("{}", wallet_info.address.to_emoji_string());
-                    println!("\nTari Address (Base58):");
-                    println!("{}", wallet_info.address.to_base58());
+                    println!("\nInteractive Address (Emoji):");
+                    println!("{}", wallet_info.interactive_address.to_emoji_string());
+                    println!("\nInteractive Address (Base58):");
+                    println!("{}", wallet_info.interactive_address.to_base58());
+                    println!("\nOne-Sided Address (Emoji):");
+                    println!("{}", wallet_info.one_sided_address.to_emoji_string());
+                    println!("\nOne-Sided Address (Base58):");
+                    println!("{}", wallet_info.one_sided_address.to_base58());
                     println!("\nNetwork: {}", wallet_info.network);
                     println!("\nBirthday: {}", wallet_info.birthday);
                 }
@@ -47,13 +51,17 @@ fn main() {
                     println!("\nPrivate View Key:");
                     println!("{}", wallet_info.view_key);
                     println!("\nPublic View Key:");
-                    println!("{:?}", wallet_info.address.public_view_key());
+                    println!("{:?}", wallet_info.interactive_address.public_view_key());
                     println!("\nSpend Key:");
                     println!("{}", wallet_info.spend_key);
-                    println!("\nTari Address:");
-                    println!("{}", wallet_info.address.to_emoji_string());
-                    println!("\nTari Address (Base58):");
-                    println!("{}", wallet_info.address.to_base58());
+                    println!("\nInteractive Address (Emoji):");
+                    println!("{}", wallet_info.interactive_address.to_emoji_string());
+                    println!("\nInteractive Address (Base58):");
+                    println!("{}", wallet_info.interactive_address.to_base58());
+                    println!("\nOne-Sided Address (Emoji):");
+                    println!("{}", wallet_info.one_sided_address.to_emoji_string());
+                    println!("\nOne-Sided Address (Base58):");
+                    println!("{}", wallet_info.one_sided_address.to_base58());
                     println!("\nNetwork: {}", wallet_info.network);
                     println!("\nBirthday: {}", wallet_info.birthday);
 

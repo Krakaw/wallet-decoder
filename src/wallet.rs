@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use serde::Serialize;
 use tari_common::configuration::Network;
-use tari_common_types::tari_address::TariAddress;
+use tari_common_types::tari_address::{TariAddress, TariAddressFeatures};
 use tari_core::transactions::transaction_key_manager::key_manager::{
     DerivedPublicKey, TariKeyManager, 
 };
@@ -20,7 +20,8 @@ pub struct WalletInfo {
     pub seed_words: String,
     pub view_key: String,
     pub spend_key: String,
-    pub address: TariAddress,
+    pub interactive_address: TariAddress,
+    pub one_sided_address: TariAddress,
     pub network: String,
     pub emoji: String,
 }
@@ -73,21 +74,30 @@ pub fn generate_wallet(
 
     // Create the Tari address
 
-    let tari_address = TariAddress::new_dual_address_with_default_features(
+    let interactive_address = TariAddress::new_dual_address_with_default_features(
         view_key.key.clone(),
         spend_key.key.clone(),
         network_type,
     )
     .expect("Failed to create Tari address");
 
+    let one_sided_address = TariAddress::new_dual_address(
+        view_key.key.clone(),
+        spend_key.key.clone(),
+        network_type,
+        TariAddressFeatures::create_one_sided_only(),
+        None,
+    )?;
+
     Ok(WalletInfo {
         birthday,
         seed_words,
         view_key: private_view_key,
         spend_key: spend_key.key.to_string(),
-        address: tari_address.clone(),
+        interactive_address: interactive_address.clone(),
+        one_sided_address: one_sided_address.clone(),
         network,
-        emoji: tari_address.to_emoji_string(),
+        emoji: interactive_address.to_emoji_string(),
     })
 }
 
@@ -109,10 +119,18 @@ pub fn load_wallet_from_seed_phrase(
 
     let network_type = Network::from_str(&network).unwrap_or(Network::MainNet);
 
-    let address = TariAddress::new_dual_address_with_default_features(
+    let interactive_address = TariAddress::new_dual_address_with_default_features(
         view_key.key.clone(),
         spend_key.key.clone(),
         network_type,
+    )?;
+
+    let one_sided_address = TariAddress::new_dual_address(
+        view_key.key.clone(),
+        spend_key.key.clone(),
+        network_type,
+        TariAddressFeatures::create_one_sided_only(),
+        None,
     )?;
 
     Ok(WalletInfo {
@@ -120,9 +138,10 @@ pub fn load_wallet_from_seed_phrase(
         seed_words: seed_phrase.to_string(),
         view_key: private_view_key,
         spend_key: spend_key.key.to_string(),
-        address: address.clone(),
+        interactive_address: interactive_address.clone(),
+        one_sided_address: one_sided_address.clone(),
         network,
-        emoji: address.to_emoji_string(),
+        emoji: interactive_address.to_emoji_string(),
     })
 }
 
@@ -138,7 +157,7 @@ mod tests {
         assert!(!result.spend_key.is_empty());
         assert_eq!(result.network, "mainnet");
         assert!(!result.emoji.is_empty());
-        assert_eq!(result.address.network(), Network::MainNet);
+        assert_eq!(result.interactive_address.network(), Network::MainNet);
     }
 
     #[test]
@@ -157,9 +176,9 @@ mod tests {
             let result = generate_wallet(None, network.to_string()).unwrap();
             assert_eq!(result.network, network);
             match network {
-                "mainnet" => assert_eq!(result.address.network(), Network::MainNet),
-                "nextnet" => assert_eq!(result.address.network(), Network::NextNet),
-                "esmeralda" => assert_eq!(result.address.network(), Network::Esmeralda),
+                "mainnet" => assert_eq!(result.interactive_address.network(), Network::MainNet),
+                "nextnet" => assert_eq!(result.interactive_address.network(), Network::NextNet),
+                "esmeralda" => assert_eq!(result.interactive_address.network(), Network::Esmeralda),
                 _ => panic!("Unexpected network"),
             }
         }
@@ -239,9 +258,9 @@ mod tests {
                     .unwrap();
             assert_eq!(loaded.network, network);
             match network {
-                "mainnet" => assert_eq!(loaded.address.network(), Network::MainNet),
-                "nextnet" => assert_eq!(loaded.address.network(), Network::NextNet),
-                "esmeralda" => assert_eq!(loaded.address.network(), Network::Esmeralda),
+                "mainnet" => assert_eq!(loaded.interactive_address.network(), Network::MainNet),
+                "nextnet" => assert_eq!(loaded.interactive_address.network(), Network::NextNet),
+                "esmeralda" => assert_eq!(loaded.interactive_address.network(), Network::Esmeralda),
                 _ => panic!("Unexpected network"),
             }
         }
@@ -265,7 +284,7 @@ mod tests {
         assert_eq!(loaded.view_key, expected_view_key);
         assert_eq!(loaded.spend_key, expected_spend_key);
         assert_eq!(loaded.network, "nextnet");
-        assert_eq!(loaded.address.to_base58(), expected_interactive_address);
+        assert_eq!(loaded.interactive_address.to_base58(), expected_interactive_address);
         assert_eq!(loaded.emoji, expected_interactive_emoji);
     }
 }
