@@ -56,6 +56,7 @@ fn generate_keys(seed: CipherSeed) -> (DerivedPublicKey, DerivedPublicKey, Strin
 pub fn generate_wallet(
     password: Option<SafePassword>,
     network: String,
+    payment_id: Option<String>,
 ) -> Result<WalletInfo, anyhow::Error> {
     // Create a new cipher seed
     let seed = CipherSeed::new();
@@ -86,7 +87,7 @@ pub fn generate_wallet(
         spend_key.key.clone(),
         network_type,
         TariAddressFeatures::create_one_sided_only(),
-        None,
+            payment_id.map(|id| id.as_bytes().to_vec()),
     )?;
 
     Ok(WalletInfo {
@@ -105,6 +106,7 @@ pub fn load_wallet_from_seed_phrase(
     seed_phrase: &str,
     network: String,
     password: Option<SafePassword>,
+    payment_id: Option<String>,
 ) -> Result<WalletInfo, anyhow::Error> {
     // Parse the seed phrase into words
     let seed_words = SeedWords::from_str(seed_phrase)
@@ -114,7 +116,10 @@ pub fn load_wallet_from_seed_phrase(
     let seed = CipherSeed::from_mnemonic(&seed_words, password)
         .map_err(|e| anyhow::anyhow!("Failed to create cipher seed: {}", e))?;
 
+    println!("seed: {:#?}", seed);
     let birthday = seed.birthday();
+    // Print birthday as bytes
+    println!("birthday: {:?}", birthday.to_le_bytes());
     let (view_key, spend_key, private_view_key) = generate_keys(seed.clone());
 
     let network_type = Network::from_str(&network).unwrap_or(Network::MainNet);
@@ -130,7 +135,7 @@ pub fn load_wallet_from_seed_phrase(
         spend_key.key.clone(),
         network_type,
         TariAddressFeatures::create_one_sided_only(),
-        None,
+        payment_id.map(|id| id.as_bytes().to_vec()),
     )?;
 
     Ok(WalletInfo {

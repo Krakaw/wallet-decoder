@@ -20,6 +20,10 @@ pub enum Command {
         /// Network to use (default: mainnet)
         #[clap(long, default_value = "mainnet")]
         network: String,
+
+        /// Optional payment_id
+        #[clap(long, short)]
+        payment_id: Option<String>,
     },
     /// Decode a Tari address
     DecodeAddress {
@@ -38,5 +42,9 @@ pub enum Command {
         /// Network to use (default: mainnet)
         #[clap(long, default_value = "mainnet")]
         network: String,
+
+        /// Optional payment_id
+        #[clap(long, short)]
+        payment_id: Option<String>,
     },
 } 

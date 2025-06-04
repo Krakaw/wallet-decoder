@@ -10,8 +10,8 @@ fn main() {
     let args = Args::parse();
 
     match args.command {
-        Command::GenerateWallet { password, network } => {
-            match wallet::generate_wallet(password, network.clone()) {
+        Command::GenerateWallet { password, network, payment_id } => {
+            match wallet::generate_wallet(password, network.clone(), payment_id) {
                 Ok(wallet_info) => {
                     println!("Wallet created successfully!");
                     println!("\nSeed Words (SAVE THESE SECURELY):");
@@ -42,8 +42,8 @@ fn main() {
                 Err(e) => println!("Error decoding address: {:#?}", e),
             }
         }
-        Command::LoadSeedPhrase { seed_phrase, network, password } => {
-            match  wallet::load_wallet_from_seed_phrase(&seed_phrase, network.clone(), password) {
+        Command::LoadSeedPhrase { seed_phrase, network, password, payment_id } => {
+            match  wallet::load_wallet_from_seed_phrase(&seed_phrase, network.clone(), password, payment_id) {
                 Ok(wallet_info) => {
                     println!("Wallet loaded successfully!");
                     println!("\nSeed Words:");
