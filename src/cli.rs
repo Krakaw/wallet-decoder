@@ -14,7 +14,7 @@ pub enum Command {
     /// Generate a new Tari wallet
     GenerateWallet {
         /// Optional password for the wallet
-        #[clap(long)]
+        #[clap(long, short = 'P')]
         password: Option<SafePassword>,
 
         /// Network to use (default: mainnet)
@@ -36,7 +36,7 @@ pub enum Command {
         seed_phrase: String,
 
         /// Optional password for the wallet
-        #[clap(long)]
+        #[clap(long, short = 'P')]
         password: Option<SafePassword>,
 
         /// Network to use (default: mainnet)
