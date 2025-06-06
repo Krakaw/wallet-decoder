@@ -11,37 +11,90 @@ const MAX_ENCRYPTED_DATA_SIZE: usize = 256; // Maximum size for payment ID
 
 /// Address feature flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AddressFeatures {
-    /// One-sided address (standard)
-    OneSided = 0x01,
-    /// Interactive address
-    Interactive = 0x02,
-    /// Payment ID integrated address
-    PaymentId = 0x04,
-    /// Combined features
-    OneSidedWithPaymentId = 0x05,
-}
+pub struct AddressFeatures(pub u8);
 
 impl AddressFeatures {
+    pub const ONE_SIDED: AddressFeatures = AddressFeatures(0x01);
+    pub const INTERACTIVE: AddressFeatures = AddressFeatures(0x02);
+    pub const PAYMENT_ID: AddressFeatures = AddressFeatures(0x04);
+
     /// Create features from byte value
     pub fn from_byte(byte: u8) -> Self {
-        match byte {
-            0x01 => AddressFeatures::OneSided,
-            0x02 => AddressFeatures::Interactive,
-            0x04 => AddressFeatures::PaymentId,
-            0x05 => AddressFeatures::OneSidedWithPaymentId,
-            _ => AddressFeatures::OneSided, // Default to one-sided
-        }
+        AddressFeatures(byte)
     }
 
     /// Get byte value of features
     pub fn as_byte(&self) -> u8 {
-        *self as u8
+        self.0
     }
 
     /// Check if payment ID is included
     pub fn has_payment_id(&self) -> bool {
-        (self.as_byte() & AddressFeatures::PaymentId as u8) != 0
+        self.contains(AddressFeatures::PAYMENT_ID)
+    }
+
+    /// Check if interactive is included
+    pub fn has_interactive(&self) -> bool {
+        self.contains(AddressFeatures::INTERACTIVE)
+    }
+
+    /// Check if one-sided is included
+    pub fn has_one_sided(&self) -> bool {
+        self.contains(AddressFeatures::ONE_SIDED)
+    }
+
+    /// Check if features contains a specific feature
+    pub fn contains(&self, feature: AddressFeatures) -> bool {
+        (self.0 & feature.0) != 0
+    }
+
+    /// Combine features
+    pub fn combine(&self, other: AddressFeatures) -> AddressFeatures {
+        AddressFeatures(self.0 | other.0)
+    }
+
+    /// Create interactive only features
+    pub fn create_interactive_only() -> Self {
+        AddressFeatures::INTERACTIVE
+    }
+
+    /// Create one-sided only features
+    pub fn create_one_sided_only() -> Self {
+        AddressFeatures::ONE_SIDED
+    }
+
+    /// Create interactive and one-sided features
+    pub fn create_interactive_and_one_sided() -> Self {
+        AddressFeatures::INTERACTIVE | AddressFeatures::ONE_SIDED
+    }
+}
+
+impl std::ops::BitOr for AddressFeatures {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        self.combine(rhs)
+    }
+}
+
+impl std::fmt::Display for AddressFeatures {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.has_interactive() {
+            write!(f, "Interactive,")?;
+        }
+        if self.has_one_sided() {
+            write!(f, "One-sided,")?;
+        }
+        if self.has_payment_id() {
+            write!(f, "Payment-id,")?;
+        }
+        Ok(())
+    }
+}
+
+impl Default for AddressFeatures {
+    fn default() -> Self {
+        AddressFeatures::ONE_SIDED
     }
 }
 
@@ -64,9 +117,9 @@ impl TariAddress {
         payment_id: Option<Vec<u8>>,
     ) -> Self {
         let features = if payment_id.is_some() {
-            AddressFeatures::OneSidedWithPaymentId
+            AddressFeatures::ONE_SIDED | AddressFeatures::PAYMENT_ID
         } else {
-            AddressFeatures::OneSided
+            AddressFeatures::ONE_SIDED
         };
 
         Self {
@@ -332,7 +385,7 @@ mod tests {
         let address = TariAddress::new(Network::MainNet, view_key, spend_key, None);
 
         assert_eq!(address.network(), Network::MainNet);
-        assert_eq!(address.features(), AddressFeatures::OneSided);
+        assert_eq!(address.features(), AddressFeatures::ONE_SIDED);
         assert!(address.payment_id().is_none());
     }
 
@@ -347,7 +400,8 @@ mod tests {
             Some(payment_id.clone()),
         );
 
-        assert_eq!(address.features(), AddressFeatures::OneSidedWithPaymentId);
+        assert!(address.features().has_payment_id());
+        assert!(address.features().has_one_sided());
         assert_eq!(address.payment_id(), Some(payment_id.as_slice()));
         assert_eq!(
             address.payment_id_ascii(),
@@ -432,12 +486,23 @@ mod tests {
 
     #[test]
     fn test_address_features() {
-        assert_eq!(AddressFeatures::OneSided.as_byte(), 0x01);
-        assert_eq!(AddressFeatures::PaymentId.as_byte(), 0x04);
-        assert_eq!(AddressFeatures::OneSidedWithPaymentId.as_byte(), 0x05);
+        // Test individual features
+        assert_eq!(AddressFeatures::ONE_SIDED.as_byte(), 0x01);
+        assert_eq!(AddressFeatures::INTERACTIVE.as_byte(), 0x02);
+        assert_eq!(AddressFeatures::PAYMENT_ID.as_byte(), 0x04);
 
-        assert!(!AddressFeatures::OneSided.has_payment_id());
-        assert!(AddressFeatures::PaymentId.has_payment_id());
-        assert!(AddressFeatures::OneSidedWithPaymentId.has_payment_id());
+        // Test feature combinations
+        let combined = AddressFeatures::ONE_SIDED | AddressFeatures::PAYMENT_ID;
+        assert_eq!(combined.as_byte(), 0x05);
+
+        // Test feature detection
+        let features = AddressFeatures::from_byte(0x05);
+        assert!(features.has_one_sided());
+        assert!(features.has_payment_id());
+        assert!(!features.has_interactive());
+
+        // Test Display implementation
+        let features = AddressFeatures::ONE_SIDED | AddressFeatures::PAYMENT_ID;
+        assert_eq!(features.to_string(), "One-sided,Payment-id,");
     }
 }

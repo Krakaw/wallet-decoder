@@ -250,7 +250,6 @@ impl WasmTariAddress {
 
 #[wasm_bindgen]
 pub fn decode_tari_address(address_str: &str) -> Result<JsValue, JsError> {
-    
     let address = TariAddressGenerator::new()
         .parse_address(address_str)
         .map_err(|e| JsError::new(&format!("Error decoding address: {:#?}", e)))?;
@@ -259,14 +258,8 @@ pub fn decode_tari_address(address_str: &str) -> Result<JsValue, JsError> {
     
     let features_info = FeaturesInfo {
         features_byte: features.as_byte(),
-        one_sided: matches!(
-            features,
-            AddressFeatures::OneSided | AddressFeatures::OneSidedWithPaymentId
-        ),
-        interactive: matches!(
-            features,
-            AddressFeatures::Interactive 
-        ),
+        one_sided: features.has_one_sided(),
+        interactive: features.has_interactive(),
         payment_id: features.has_payment_id(),
     };
 
@@ -285,7 +278,6 @@ pub fn decode_tari_address(address_str: &str) -> Result<JsValue, JsError> {
         payment_id_ascii: address
             .payment_id()
             .map(|pid| utils::bytes_to_ascii_string(&pid)),
-        
     };
 
     Ok(serde_wasm_bindgen::to_value(&info)?)
