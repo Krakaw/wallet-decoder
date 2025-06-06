@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Tari Address Tools</title>
+    <title>Tari Address Decoder</title>
     <link rel="icon" type="image/png" href="icon.png">
     <style>
         body {
@@ -127,108 +127,42 @@
             margin: 0;
             color: #e0e0e0;
         }
-        .network-selector {
-            margin-bottom: 15px;
-        }
-        .network-selector select {
-            padding: 10px;
-            background-color: #333;
-            color: #e0e0e0;
-            border: 1px solid #404040;
-            border-radius: 4px;
-            width: 100%;
-        }
-        .tabs {
-            display: flex;
-            margin-bottom: 20px;
-            border-bottom: 1px solid #404040;
-        }
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border: 1px solid transparent;
-            border-bottom: none;
-            border-radius: 4px 4px 0 0;
-            margin-right: 5px;
-            background-color: #2d2d2d;
-        }
-        .tab.active {
-            background-color: #333;
-            border-color: #404040;
-            border-bottom-color: #333;
-            margin-bottom: -1px;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
     </style>
 </head>
 <body>
     <div class="github-links">
-        <a href="https://github.com/tari-project/tari-address-generator" target="_blank" style="text-decoration: none; color: #333;">
+        <a href="https://github.com/Krakaw/wallet-decoder" target="_blank" style="text-decoration: none; color: #333;">
             <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub" style="height: 20px; vertical-align: middle;">
         </a>
+        <iframe src="https://ghbtns.com/github-btn.html?user=Krakaw&repo=wallet-decoder&type=star&count=false" 
+                frameborder="0" 
+                scrolling="0" 
+                width="150" 
+                height="20" 
+                title="GitHub">
+        </iframe>
     </div>
     <div class="banner">
         <img src="icon.png" alt="Tari Icon">
-        <h1>Tari Address Tools</h1>
+        <h1>Tari Address Decoder</h1>
     </div>
-
-    <div class="tabs">
-        <div class="tab active" onclick="switchTab('decode')">Decode Address</div>
-        <div class="tab" onclick="switchTab('generate')">Generate Wallet</div>
+    <div class="input-group">
+        <input type="text" id="address" placeholder="Enter Tari address" autofocus>
+        <button onclick="makePermanent()">Add to Results</button>
     </div>
-
-    <div id="decode-tab" class="tab-content active">
-        <div class="input-group">
-            <input type="text" id="address" placeholder="Enter Tari address" autofocus>
-            <button onclick="decodeAddress()">Decode Address</button>
-        </div>
-        <div id="preview" class="result-container" style="opacity: 0.7;"></div>
-        <div id="decode-result" class="result-container"></div>
-    </div>
-
-    <div id="generate-tab" class="tab-content">
-        <div class="input-group">
-            <div class="network-selector">
-                <select id="network">
-                    <option value="mainnet">Mainnet</option>
-                    <option value="nextnet">Nextnet</option>
-                    <option value="esmeralda">Esmeralda</option>
-                </select>
-            </div>
-            <input type="text" id="seedPhrase" placeholder="Enter seed phrase (optional)">
-            <input type="text" id="paymentId" placeholder="Enter payment ID (optional)">
-            <button onclick="generateWallet()">Generate Wallet</button>
-        </div>
-        <div id="generate-result" class="result-container"></div>
-    </div>
+    <div id="preview" class="result-container" style="opacity: 0.7;"></div>
+    <div id="result" class="result-container"></div>
 
     <script type="module">
-        import init, { WasmTariAddressGenerator } from './tari_address_generator.js';
+        import init, { decode_tari_address } from './wallet_decoder.js';
 
-        let generator = null;
         let currentPreview = null;
         let debounceTimer = null;
 
         async function run() {
             try {
                 await init();
-                generator = new WasmTariAddressGenerator();
-                
-                // Add input event listener for live preview
-                const addressInput = document.getElementById('address');
-                addressInput.addEventListener('input', handleInput);
-                // Add keydown event listener for Enter key
-                addressInput.addEventListener('keydown', (event) => {
-                    if (event.key === 'Enter') {
-                        decodeAddress();
-                    }
-                });
-
+                window.decodeTariAddress = decode_tari_address;
                 // Process any addresses from URL parameters
                 const urlParams = new URLSearchParams(window.location.search);
                 const addresses = urlParams.getAll('address');
@@ -237,9 +171,18 @@
                         await decodeAndDisplayAddress(address, true);
                     }
                 }
+                // Add input event listener for live preview
+                const addressInput = document.getElementById('address');
+                addressInput.addEventListener('input', handleInput);
+                // Add keydown event listener for Enter key
+                addressInput.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        makePermanent();
+                    }
+                });
             } catch (error) {
                 console.error('Failed to initialize WASM module:', error);
-                document.getElementById('decode-result').innerHTML = `
+                document.getElementById('result').innerHTML = `
                     <div class="error">
                         Failed to initialize WASM module. Please check the console for details.
                     </div>`;
@@ -266,7 +209,7 @@
             currentPreview = null;
         }
 
-        window.decodeAddress = async function() {
+        window.makePermanent = async function() {
             const address = document.getElementById('address').value;
             if (!address) return;
             
@@ -276,26 +219,19 @@
         };
 
         async function decodeAndDisplayAddress(address, isPermanent) {
-            const targetDiv = isPermanent ? document.getElementById('decode-result') : document.getElementById('preview');
+            const targetDiv = isPermanent ? document.getElementById('result') : document.getElementById('preview');
             
             try {
-                if (!generator) {
+                if (!window.decodeTariAddress) {
                     throw new Error('WASM module not initialized');
                 }
-                console.log('Decoding address:', address);
-                const parsed = generator.parse_address(address);
+                const info = await window.decodeTariAddress(address);
                 
                 const resultItem = document.createElement('div');
                 resultItem.className = 'result-item';
                 resultItem.innerHTML = `
                     <h3>Address: ${address}</h3>
-                    <div class="result-content">
-Base58: <span class="selectable">${parsed.to_base58()}</span>
-Emoji: <span class="selectable">${parsed.to_emoji()}</span>
-Network: <span class="selectable">${parsed.network()}</span>
-Has Payment ID: <span class="selectable">${parsed.has_payment_id()}</span>
-${parsed.has_payment_id() ? `Payment ID: <span class="selectable">${parsed.payment_id()}</span>` : ''}
-                    </div>
+                    <div class="result-content">${formatResult(info)}</div>
                 `;
 
                 if (isPermanent) {
@@ -310,7 +246,7 @@ ${parsed.has_payment_id() ? `Payment ID: <span class="selectable">${parsed.payme
                 resultItem.className = 'result-item';
                 resultItem.innerHTML = `
                     <h3>Address: ${address}</h3>
-                    <div class="error">Error: ${error.message ? error.message : error}</div>
+                    <div class="error">Error: ${error.message}</div>
                 `;
 
                 if (isPermanent) {
@@ -324,73 +260,18 @@ ${parsed.has_payment_id() ? `Payment ID: <span class="selectable">${parsed.payme
             }
         }
 
-        window.generateWallet = async function() {
-            if (!generator) {
-                alert('WASM module not initialized');
-                return;
-            }
-
-            const network = document.getElementById('network').value;
-            const seedPhrase = document.getElementById('seedPhrase').value;
-            const paymentId = document.getElementById('paymentId').value;
-
-            try {
-                let wallet;
-                if (seedPhrase) {
-                    wallet = generator.restore_from_seed_phrase(seedPhrase, network);
-                } else {
-                    wallet = generator.generate_new_wallet(network);
-                }
-
-                let address = wallet.address_base58();
-                if (paymentId) {
-                    const newAddress = wallet.new_address_with_payment_id(paymentId);
-                    address = newAddress.to_base58();
-                }
-
-                const resultItem = document.createElement('div');
-                resultItem.className = 'result-item';
-                resultItem.innerHTML = `
-                    <h3>Generated Wallet</h3>
-                    <div class="result-content">
-Network: <span class="selectable">${wallet.network()}</span>
-Base58 Address: <span class="selectable">${wallet.address_base58()}</span>
-Emoji Address: <span class="selectable">${wallet.address_emoji()}</span>
-Seed Phrase: <span class="selectable">${wallet.seed_phrase()}</span>
-View Private Key: <span class="selectable">${wallet.view_private_key_hex()}</span>
-Spend Private Key: <span class="selectable">${wallet.spend_private_key_hex()}</span>
-View Public Key: <span class="selectable">${wallet.view_public_key_hex()}</span>
-Spend Public Key: <span class="selectable">${wallet.spend_public_key_hex()}</span>
-${paymentId ? `Payment ID: <span class="selectable">${paymentId}</span>` : ''}
-                    </div>
-                `;
-
-                document.getElementById('generate-result').insertBefore(resultItem, document.getElementById('generate-result').firstChild);
-            } catch (error) {
-                const resultItem = document.createElement('div');
-                resultItem.className = 'result-item';
-                resultItem.innerHTML = `
-                    <h3>Error</h3>
-                    <div class="error">${error.message}</div>
-                `;
-                document.getElementById('generate-result').insertBefore(resultItem, document.getElementById('generate-result').firstChild);
-                console.error('Error:', error);
-            }
-        };
-
-        window.switchTab = function(tabName) {
-            // Update tab styles
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            
-            // Activate selected tab
-            document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
-            document.getElementById(`${tabName}-tab`).classList.add('active');
-        };
+        function formatResult(info) {
+            return Object.entries(info)
+                .map(([key, value]) => {
+                    if (typeof value === 'object' && value !== null && key !== 'raw_bytes') {
+                        return `${key}:\n${Object.entries(value)
+                            .map(([k, v]) => `  ${k}: <span class="selectable">${v}</span>`)
+                            .join('\n')}`;
+                    }
+                    return `${key}: <span class="selectable">${value ?? ''}</span>`;
+                })
+                .join('\n');
+        }
 
         run();
     </script>
