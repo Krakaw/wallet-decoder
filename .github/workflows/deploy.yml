@@ -27,14 +27,14 @@ jobs:
       - name: Build
         run: |
           echo "Building WASM module..."
-          wasm-pack build --target web --verbose
+          wasm-pack build --target web --features wasm-bindgen
           echo "Creating docs directory..."
           mkdir -p docs
           echo "Copying files to docs directory..."
-          cp pkg/wallet* docs/
+          cp pkg/tari* docs/
           cp pkg/package.json docs/
-          cp index.html docs/
-          cp icon.png docs/
+          cp examples/web/index.html docs/
+          cp examples/web/icon.png docs/
           echo "Creating _redirects file..."
           echo '{
             "rewrites": [

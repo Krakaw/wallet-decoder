@@ -1,0 +1,22 @@
+{
+  "name": "tari-address-generator",
+  "version": "0.1.0",
+  "description": "Tari Address Generator WASM module for Node.js",
+  "main": "pkg/tari_address_generator.js",
+  "types": "pkg/tari_address_generator.d.ts",
+  "scripts": {
+    "build": "wasm-pack build --target nodejs --features wasm-bindgen",
+    "test": "node examples/node-example.js"
+  },
+  "keywords": [
+    "tari",
+    "cryptocurrency",
+    "wallet",
+    "wasm"
+  ],
+  "author": "",
+  "license": "BSD-3-Clause",
+  "dependencies": {
+    "buffer": "^6.0.3"
+  }
+} 

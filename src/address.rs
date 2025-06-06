@@ -1,142 +1,435 @@
-use std::str::FromStr;
-use tari_common_types::tari_address::{TariAddress, TariAddressFeatures};
-use crate::{utils};
+use crate::checksum::{compute_checksum, verify_data_with_checksum};
+use crate::emoji::{bytes_to_emoji, emoji_to_bytes};
+use crate::error::{TariError, Result};
+use crate::keys::PublicKey;
+use crate::network::Network;
 
-pub fn decode_address(address_str: &str) -> Result<TariAddress, anyhow::Error> {
-    let address = TariAddress::from_str(address_str)?;
-    Ok(address)
+const TARI_ADDRESS_INTERNAL_SINGLE_SIZE: usize = 66; // network(1) + features(1) + view_key(32) + spend_key(32)
+const TARI_ADDRESS_INTERNAL_DUAL_SIZE: usize = 67; // single size + checksum(1)
+const MAX_ENCRYPTED_DATA_SIZE: usize = 256; // Maximum size for payment ID
+
+/// Address feature flags
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressFeatures {
+    /// One-sided address (standard)
+    OneSided = 0x01,
+    /// Payment ID integrated address
+    PaymentId = 0x04,
+    /// Combined features
+    OneSidedWithPaymentId = 0x05,
 }
 
-pub fn print_address_details(address: &TariAddress) {
-    println!("=== Tari Address Details ===");
-    println!("Base58: {}", address.to_base58());
-    println!("Emoji: {}", address.to_emoji_string());
-    println!("Hex: {}", address.to_hex());
-    println!("\n=== Binary Representation ===");
-    let bytes = address.to_vec();
-    println!("Raw bytes: {:02x?}", bytes);
-    println!("Length: {} bytes", bytes.len());
-
-    println!("\n=== Network Information ===");
-    println!("Network: {:?}", address.network());
-    println!("Network byte: 0x{:02x}", address.network().as_byte());
-
-    println!("\n=== Features ===");
-    let features = address.features();
-    println!("Features byte: 0x{:02x}", features.as_u8());
-    println!(
-        "One-sided: {}",
-        features.contains(TariAddressFeatures::ONE_SIDED)
-    );
-    println!(
-        "Interactive: {}",
-        features.contains(TariAddressFeatures::INTERACTIVE)
-    );
-    println!(
-        "Payment ID: {}",
-        features.contains(TariAddressFeatures::PAYMENT_ID)
-    );
-
-    println!("\n=== Key Information ===");
-    println!("Public Spend Key: {}", address.public_spend_key());
-    if let Some(view_key) = address.public_view_key() {
-        println!("Public View Key: {}", view_key);
+impl AddressFeatures {
+    /// Create features from byte value
+    pub fn from_byte(byte: u8) -> Self {
+        match byte {
+            0x01 => AddressFeatures::OneSided,
+            0x04 => AddressFeatures::PaymentId,
+            0x05 => AddressFeatures::OneSidedWithPaymentId,
+            _ => AddressFeatures::OneSided, // Default to one-sided
+        }
     }
 
-    println!("\n=== Address Type ===");
-    match address {
-        TariAddress::Single(_) => println!("Type: Single Address"),
-        TariAddress::Dual(_) => println!("Type: Dual Address"),
+    /// Get byte value of features
+    pub fn as_byte(&self) -> u8 {
+        *self as u8
     }
 
-    let payment_id = address.get_payment_id_user_data_bytes();
-    if !payment_id.is_empty() {
-        println!("\n=== Payment ID Data ===");
-        println!("Payment ID (raw bytes): {:?}", payment_id);
-        let payment_string = utils::bytes_to_ascii_string(&payment_id);
-        println!("Payment ID: {:?}", payment_string);
+    /// Check if payment ID is included
+    pub fn has_payment_id(&self) -> bool {
+        matches!(self, AddressFeatures::PaymentId | AddressFeatures::OneSidedWithPaymentId)
+    }
+}
+
+/// Represents a Tari address with various encoding formats
+#[derive(Clone, PartialEq, Eq)]
+pub struct TariAddress {
+    network: Network,
+    features: AddressFeatures,
+    view_key: PublicKey,
+    spend_key: PublicKey,
+    payment_id: Option<Vec<u8>>,
+}
+
+impl TariAddress {
+    /// Create a new Tari address
+    pub fn new(
+        network: Network,
+        view_key: PublicKey,
+        spend_key: PublicKey,
+        payment_id: Option<Vec<u8>>,
+    ) -> Self {
+        let features = if payment_id.is_some() {
+            AddressFeatures::OneSidedWithPaymentId
+        } else {
+            AddressFeatures::OneSided
+        };
+
+        Self {
+            network,
+            features,
+            view_key,
+            spend_key,
+            payment_id,
+        }
+    }
+
+    /// Create address from components
+    pub fn from_components(
+        network: Network,
+        features: AddressFeatures,
+        view_key: PublicKey,
+        spend_key: PublicKey,
+        payment_id: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            network,
+            features,
+            view_key,
+            spend_key,
+            payment_id,
+        }
+    }
+
+    /// Get the network
+    pub fn network(&self) -> Network {
+        self.network
+    }
+
+    /// Get the features
+    pub fn features(&self) -> AddressFeatures {
+        self.features
+    }
+
+    /// Get the view key
+    pub fn view_key(&self) -> &PublicKey {
+        &self.view_key
+    }
+
+    /// Get the spend key
+    pub fn spend_key(&self) -> &PublicKey {
+        &self.spend_key
+    }
+
+    /// Get the payment ID
+    pub fn payment_id(&self) -> Option<&[u8]> {
+        self.payment_id.as_deref()
+    }
+
+    /// Convert to raw bytes (without checksum)
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let payment_id_len = self.payment_id.as_ref().map_or(0, |pid| pid.len());
+        let length = 67 + payment_id_len; // 67 for network, features, view key, spend key + payment_id
+        let mut buf = vec![0; length];
+        buf[0] = self.network.as_byte();
+        buf[1] = self.features.as_byte();
+        buf[2..34].copy_from_slice(&self.view_key.as_bytes());
+        buf[34..66].copy_from_slice(&self.spend_key.as_bytes());
+        if let Some(payment_id) = &self.payment_id {
+            buf[66..(length - 1)].copy_from_slice(payment_id);
+        }
+        let checksum = compute_checksum(&buf[0..(length - 1)]);
+        buf[length - 1] = checksum;
+        buf
+    }
+
+    /// Convert to bytes with checksum
+    pub fn to_bytes_with_checksum(&self) -> Vec<u8> {
+        self.to_bytes()
+    }
+
+    /// Convert to Base58 format
+    pub fn to_base58(&self) -> String {
+        let bytes = self.to_bytes();
+        
+        let mut base58 = "".to_string();
+        let network = bs58::encode(&bytes[0..1]).into_string();
+        let features = bs58::encode(&bytes[1..2].to_vec()).into_string();
+        
+        let rest = bs58::encode(&bytes[2..]).into_string();
+        
+        base58.push_str(&network);
+        base58.push_str(&features);
+        base58.push_str(&rest); 
+        base58
+    }
+
+    /// Convert to emoji format
+    pub fn to_emoji(&self) -> String {
+        let final_bytes = self.to_bytes_with_checksum();
+        bytes_to_emoji(&final_bytes)
+    }
+
+    /// Parse address from Base58 string
+    pub fn from_base58(s: &str) -> Result<Self> {
+        if s.len() < 2 {
+            return Err(TariError::InvalidAddress("Address too short".to_string()));
+        }
+
+        let (first, rest) = s.split_at(2);
+        let (network, features) = first.split_at(1);
+        
+        let mut result = bs58::decode(network)
+            .into_vec()
+            .map_err(|_| TariError::InvalidAddress("Cannot recover network".to_string()))?;
+        let mut features = bs58::decode(features)
+            .into_vec()
+            .map_err(|_| TariError::InvalidAddress("Cannot recover features".to_string()))?;
+        let mut rest = bs58::decode(rest)
+            .into_vec()
+            .map_err(|_| TariError::InvalidAddress("Cannot recover public key".to_string()))?;
+            
+        result.append(&mut features);
+        result.append(&mut rest);
+
+        Self::from_bytes(&result)
+    }
+
+    /// Parse address from emoji string
+    pub fn from_emoji(emoji: &str) -> Result<Self> {
+        let bytes = emoji_to_bytes(emoji)
+            .ok_or_else(|| TariError::InvalidAddress("Invalid emoji sequence".to_string()))?;
+        Self::from_bytes_with_checksum(&bytes)
+    }
+
+    /// Parse address from bytes with checksum
+    pub fn from_bytes_with_checksum(bytes: &[u8]) -> Result<Self> {
+        if !verify_data_with_checksum(bytes) {
+            return Err(TariError::InvalidChecksum);
+        }
+
+        let data_len = bytes.len() - 1;
+        let data = &bytes[..data_len];
+        
+        Self::from_bytes(data)
+    }
+
+    /// Parse address from hex string
+    pub fn from_hex(hex_str: &str) -> Result<Self> {
+        let bytes = hex::decode(hex_str)
+            .map_err(|_| TariError::InvalidAddress("Invalid hex string".to_string()))?;
+        Self::from_bytes(&bytes)
+    }
+
+    /// Parse address from raw bytes
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        if !(bytes.len() == TARI_ADDRESS_INTERNAL_SINGLE_SIZE ||
+            (bytes.len() >= TARI_ADDRESS_INTERNAL_DUAL_SIZE &&
+                bytes.len() <= (TARI_ADDRESS_INTERNAL_DUAL_SIZE + MAX_ENCRYPTED_DATA_SIZE)))
+        {
+            return Err(TariError::InvalidAddress("Invalid address size".to_string()));
+        }
+
+        if bytes.len() == TARI_ADDRESS_INTERNAL_SINGLE_SIZE {
+            // Handle single address (without payment ID)
+            let network = Network::from_byte(bytes[0])?;
+            let features = AddressFeatures::from_byte(bytes[1]);
+            let view_key = PublicKey::from_bytes(&bytes[2..34])?;
+            let spend_key = PublicKey::from_bytes(&bytes[34..66])?;
+
+            Ok(Self::from_components(
+                network,
+                features,
+                view_key,
+                spend_key,
+                None,
+            ))
+        } else {
+            // Handle dual address (with payment ID)
+            let network = Network::from_byte(bytes[0])?;
+            let features = AddressFeatures::from_byte(bytes[1]);
+            let view_key = PublicKey::from_bytes(&bytes[2..34])?;
+            let spend_key = PublicKey::from_bytes(&bytes[34..66])?;
+            
+            let payment_id = if bytes.len() > TARI_ADDRESS_INTERNAL_DUAL_SIZE {
+                Some(bytes[66..].to_vec())
+            } else {
+                None
+            };
+
+            Ok(Self::from_components(
+                network,
+                features,
+                view_key,
+                spend_key,
+                payment_id,
+            ))
+        }
+    }
+    
+    /// Validate payment ID
+    pub fn validate_payment_id(payment_id: &[u8]) -> Result<()> {
+        if payment_id.len() > 256 {
+            return Err(TariError::InvalidPaymentId(
+                "Payment ID too long (max 256 bytes)".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Create address with payment ID
+    pub fn with_payment_id(
+        &self,
+        payment_id: Vec<u8>,
+    ) -> Result<Self> {
+        Self::validate_payment_id(&payment_id)?;
+        
+        Ok(Self::new(
+            self.network,
+            self.view_key.clone(),
+            self.spend_key.clone(),
+            Some(payment_id),
+        ))
+    }
+
+    /// Remove payment ID from address
+    pub fn without_payment_id(&self) -> Self {
+        Self::new(
+            self.network,
+            self.view_key.clone(),
+            self.spend_key.clone(),
+            None,
+        )
+    }
+}
+
+impl std::fmt::Debug for TariAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TariAddress")
+            .field("network", &self.network())
+            .field("features", &self.features())
+            .field("view_key", &self.view_key().to_hex())
+            .field("spend_key", &self.spend_key().to_hex())
+            .field("payment_id", &self.payment_id().map(|id| hex::encode(id)))
+            .field("base58", &self.to_base58())
+            .field("emoji", &self.to_emoji())
+            .finish()
+    }
+}
+
+impl std::fmt::Display for TariAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_base58())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tari_common_types::tari_address::TariAddressFeatures;
+    use crate::keys::PrivateKey;
 
-    const TEST_ADDRESS: &str = "18AFWJbqQtbZ5o5vDK5821RLqoJHYF1vC2aFf1gXfWaABhXGY3G6Ap8fucfDEFEYAQLQgGDD5rYBw6JVMneGiAzY2g6GB28URp3yz8SyyMi8BQM";
-    const INVALID_ADDRESS: &str = "invalid_address";
-
-    #[test]
-    fn test_valid_address_parsing() {
-        let address = TariAddress::from_str(TEST_ADDRESS);
-        assert!(address.is_ok());
-
-        let address = address.unwrap();
-        assert_eq!(address.to_base58(), TEST_ADDRESS);
-        assert_eq!(address.to_hex(), "00070ea2b9f4420ed83984fc5dc8834d7ce577848b0a366fc2385b4071a5eb253e234a3e7597c19e4dd9a9d31e490d1282174aa09a3428f4b30e657b75c6a9b9494e54657374205061796d656e74204944da");
-        assert_eq!(address.to_vec().len(), 82);
+    fn create_test_keys() -> (PublicKey, PublicKey) {
+        let view_private = PrivateKey::random();
+        let spend_private = PrivateKey::random();
+        (view_private.public_key(), spend_private.public_key())
     }
 
     #[test]
-    fn test_invalid_address_parsing() {
-        let address = TariAddress::from_str(INVALID_ADDRESS);
-        assert!(address.is_err());
+    fn test_address_creation() {
+        let (view_key, spend_key) = create_test_keys();
+        let address = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        
+        assert_eq!(address.network(), Network::MainNet);
+        assert_eq!(address.features(), AddressFeatures::OneSided);
+        assert!(address.payment_id().is_none());
+    }
+
+    #[test]
+    fn test_address_with_payment_id() {
+        let (view_key, spend_key) = create_test_keys();
+        let payment_id = b"test_payment_id".to_vec();
+        let address = TariAddress::new(
+            Network::MainNet,
+            view_key,
+            spend_key,
+            Some(payment_id.clone()),
+        );
+        
+        assert_eq!(address.features(), AddressFeatures::OneSidedWithPaymentId);
+        assert_eq!(address.payment_id(), Some(payment_id.as_slice()));
+    }
+
+    #[test]
+    fn test_address_encoding() {
+        let (view_key, spend_key) = create_test_keys();
+        let address = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        
+        let base58 = address.to_base58();
+        let emoji = address.to_emoji();
+        
+        assert!(!base58.is_empty());
+        assert!(!emoji.is_empty());
+        assert_ne!(base58, emoji);
+    }
+
+    #[test]
+    fn test_address_roundtrip() {
+        let (view_key, spend_key) = create_test_keys();
+        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        
+        let bytes = original.to_bytes_with_checksum();
+        let recovered = TariAddress::from_bytes_with_checksum(&bytes).unwrap();
+        
+        assert_eq!(original, recovered);
+    }
+    
+    #[test]
+    fn test_address_from_emoji() {
+        let (view_key, spend_key) = create_test_keys();
+        // let original = TariAddress::new(Network::MainNet, view_key, spend_key, None).with_payment_id(vec![1, 2, 3, 4, 5]).unwrap();
+        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let emoji = original.to_emoji();
+        let recovered = TariAddress::from_emoji(&emoji).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn test_address_from_base58() {
+        let (view_key, spend_key) = create_test_keys();
+        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let base58 = original.to_base58();
+        let recovered = TariAddress::from_base58(&base58).unwrap();
+        assert_eq!(original, recovered);
+    }
+    
+    #[test]
+    fn test_address_from_hex() {
+        let (view_key, spend_key) = create_test_keys();
+        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let bytes = original.to_bytes_with_checksum();
+        let hex = hex::encode(bytes);
+        let recovered = TariAddress::from_hex(&hex).unwrap();
+        assert_eq!(original, recovered);
+        let recovered = TariAddress::from_hex("0001fc9e9cb2bd8f1e4cf70c1104545622cb84a9b2dd19735d20575d761d6ba9936280dd789fee2ae68aa63f09a78ccc2938cdaec33ecc909c1f86a9f654bdf15538d5").unwrap();
+        assert_eq!(recovered.to_base58(), "12PHyR5CePL5jyoevS6BbSjV2WnNgVcmaqgZA9NqPJd3894YFzCCSHn9Auvpai1LT4LKJxH2c7yyiwuxqdkxYjACrPn");
+    }
+
+    #[test]
+    fn test_address_from_emoji_with_payment_id() {
+        let (view_key, spend_key) = create_test_keys();
+        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None).with_payment_id(vec![1, 2, 3, 4, 5]).unwrap();
+        let emoji = original.to_emoji();
+        let recovered = TariAddress::from_emoji(&emoji).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn test_payment_id_validation() {
+        let valid_payment_id = vec![1u8; 100];
+        let invalid_payment_id = vec![1u8; 300]; // Too long
+        
+        assert!(TariAddress::validate_payment_id(&valid_payment_id).is_ok());
+        assert!(TariAddress::validate_payment_id(&invalid_payment_id).is_err());
     }
 
     #[test]
     fn test_address_features() {
-        let address = TariAddress::from_str(TEST_ADDRESS).unwrap();
-        let features = address.features();
-
-        assert_eq!(features.as_u8(), 0x07);
-        assert!(features.contains(TariAddressFeatures::ONE_SIDED));
-        assert!(features.contains(TariAddressFeatures::INTERACTIVE));
-        assert!(features.contains(TariAddressFeatures::PAYMENT_ID));
-    }
-
-    #[test]
-    fn test_address_network() {
-        let address = TariAddress::from_str(TEST_ADDRESS).unwrap();
-        let network = address.network();
-
-        assert_eq!(network.as_byte(), 0x00);
-        assert_eq!(format!("{:?}", network), "MainNet");
-    }
-
-    #[test]
-    fn test_address_keys() {
-        let address = TariAddress::from_str(TEST_ADDRESS).unwrap();
-
-        assert_eq!(
-            address.public_spend_key().to_string(),
-            "4a3e7597c19e4dd9a9d31e490d1282174aa09a3428f4b30e657b75c6a9b9494e"
-        );
-
-        let view_key = address.public_view_key();
-        assert!(view_key.is_some());
-        assert_eq!(
-            view_key.unwrap().to_string(),
-            "0ea2b9f4420ed83984fc5dc8834d7ce577848b0a366fc2385b4071a5eb253e23"
-        );
-    }
-
-    #[test]
-    fn test_address_type_and_payment_id() {
-        let address = TariAddress::from_str(TEST_ADDRESS).unwrap();
+        assert_eq!(AddressFeatures::OneSided.as_byte(), 0x01);
+        assert_eq!(AddressFeatures::PaymentId.as_byte(), 0x04);
+        assert_eq!(AddressFeatures::OneSidedWithPaymentId.as_byte(), 0x05);
         
-        // Test address type
-        match address {
-            TariAddress::Dual(_) => assert!(true),
-            _ => assert!(false, "Expected Dual address type"),
-        }
-
-        // Test payment ID
-        let payment_id = address.get_payment_id_user_data_bytes();
-        println!("Payment ID: {:?}", utils::bytes_to_ascii_string(&payment_id));
-        assert!(!payment_id.is_empty());
-        assert_eq!(
-            utils::bytes_to_ascii_string(&payment_id),
-            "Test Payment ID"
-        );
+        assert!(!AddressFeatures::OneSided.has_payment_id());
+        assert!(AddressFeatures::PaymentId.has_payment_id());
+        assert!(AddressFeatures::OneSidedWithPaymentId.has_payment_id());
     }
-}
+} 

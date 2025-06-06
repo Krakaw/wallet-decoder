@@ -1,181 +1,128 @@
-# Tari Wallet Decoder
+# Tari Address Generator
 
-A WebAssembly-based tool for decoding Tari wallet addresses and managing Tari wallets. This project provides both web and Node.js examples of how to use the decoder.
+A powerful tool for generating and managing Tari wallet addresses with support for multiple networks and formats. This project provides both a command-line interface and a web interface for generating, decoding, and managing Tari addresses.
 
 ## Features
 
 - Generate new Tari wallets
-- Load existing wallets from seed phrases
+- Restore wallets from seed phrases
+- Support for multiple networks:
+  - MainNet
+  - NextNet
+  - Esmeralda
+- Multiple address formats:
+  - Base58
+  - Emoji
+- Payment ID integration
+- RFC-0155 TariAddress specification compliance
+- Web interface for easy address management
+- Command-line interface for automation
+
+## Web Interface
+
+The web interface provides an intuitive way to:
 - Decode Tari addresses
-- Support for multiple networks (mainnet, nextnet, esmeralda)
-- Password protection for wallets
+- Generate new wallets
+- Restore wallets from seed phrases
+- Add payment IDs to addresses
+- View wallet details including:
+  - Base58 and Emoji addresses
+  - Seed phrases
+  - Private and public keys
+  - Network information
 
-## Building
+## Command Line Interface
 
-First, build the WebAssembly package for both web and Node.js targets:
+The CLI provides the following commands:
 
 ```bash
-# Build for web
+# Generate a new wallet
+tari-address-generator generate [--network NETWORK] [--password PASSWORD] [--payment-id PAYMENT_ID]
+
+# Decode a Tari address
+tari-address-generator decode <ADDRESS>
+
+# Load a wallet from seed phrase
+tari-address-generator load <SEED_PHRASE> [--network NETWORK] [--password PASSWORD] [--payment-id PAYMENT_ID]
+```
+
+### Options
+
+- `--network`: Network to use (mainnet, nextnet, esmeralda) [default: mainnet]
+- `--password`: Optional password for the wallet
+- `--payment-id`: Optional payment ID to include in the address
+
+## Installation
+
+### From Source
+
+```bash
+# Clone the repository
+git clone https://github.com/tari-project/tari-address-generator.git
+cd tari-address-generator
+
+# Build the project
+cargo build --release
+
+# Install the binary
+cargo install --path .
+```
+
+### Web Interface
+
+To run the web interface locally:
+
+1. Build the WASM module:
+```bash
 wasm-pack build --target web
-
-# Build for Node.js
-wasm-pack build --target nodejs
 ```
 
-## Usage
-
-### Command Line Interface
-
-The tool provides a command-line interface with the following commands:
-
-1. Generate a new wallet:
-```bash
-wallet-decoder generate-wallet [--password <PASSWORD>] [--network <NETWORK>]
-```
-
-2. Load a wallet from seed phrase:
-```bash
-wallet-decoder load-seed-phrase <SEED_PHRASE> [--password <PASSWORD>] [--network <NETWORK>]
-```
-
-3. Decode a Tari address:
-```bash
-wallet-decoder decode-address <ADDRESS>
-```
-
-Options:
-- `--password`: Optional password for wallet encryption
-- `--network`: Network to use (mainnet, nextnet, esmeralda). Defaults to mainnet
-
-### Examples
-
-Generate a new wallet:
-```bash
-wallet-decoder generate-wallet --network mainnet
-```
-
-Load a wallet from seed phrase:
-```bash
-wallet-decoder load-seed-phrase "your seed phrase here" --network mainnet
-```
-
-Decode an address:
-```bash
-wallet-decoder decode-address "143BKvG9pF8uSpB2JrB6myLMJLjjjrAPzcUyaBWpWoYW3x3Vv1EncTVTSGpdRhvucBzGisRj17tQyfg6vkGWKGjvUxZ"
-```
-
-### Web Example
-
-The web example provides a user-friendly interface to decode Tari addresses.
-
-1. Navigate to the web example directory:
+2. Serve the web interface:
 ```bash
 cd examples/web
-```
-
-2. Start a local web server (using Python as an example):
-```bash
 python3 -m http.server 8080
 ```
 
-3. Open your browser and navigate to `http://localhost:8080`
+Then open `http://localhost:8080` in your browser.
 
-The web interface allows you to:
-- Input a Tari address
-- View the decoded information including:
-  - Base58 representation
-  - Emoji representation
-  - Hex representation
-  - Network information
-  - Features
-  - Public keys
-  - Address type
-  - Payment ID (if present)
+## Usage Examples
 
-You can also pre-fill addresses using URL query parameters. For example:
-```
-http://localhost:8080?address=addr1&address=addr2&address=addr3
-```
-This will automatically decode and display multiple addresses on the page. Each address will be shown in its own card with selectable values.
+### Generate a New Wallet
 
-### Node.js Example
+```rust
+use tari_address_generator::{TariAddressGenerator, Network};
 
-The Node.js example demonstrates how to use the decoder programmatically.
+let generator = TariAddressGenerator::new();
+let wallet = generator.generate_new_wallet(Network::MainNet)?;
 
-1. Navigate to the Node.js example directory:
-```bash
-cd examples/node
+println!("Address: {}", wallet.address_base58());
+println!("Emoji: {}", wallet.address_emoji());
+println!("Seed: {}", wallet.seed_phrase());
 ```
 
-2. Run the example:
-```bash
-node index.js
+### Restore from Seed Phrase
+
+```rust
+let wallet = generator.restore_from_seed_phrase("your seed phrase here", Network::MainNet)?;
 ```
 
-The example will decode a sample Tari address and display the decoded information in a formatted JSON structure.
+### Parse an Address
 
-## Requirements
-
-- Rust and wasm-pack for building
-- Node.js 14+ for the Node.js example
-- A modern web browser with WebAssembly support for the web example
-- Python 3+ (or any web server) for serving the web example
-
-## Project Structure
-
+```rust
+let address = generator.parse_address("your address here")?;
+println!("Network: {}", address.network());
+println!("Base58: {}", address.to_base58());
+println!("Emoji: {}", address.to_emoji());
 ```
-.
-├── src/
-│   ├── lib.rs           # Core Rust implementation
-│   ├── wallet.rs        # Wallet management functionality
-│   ├── address.rs       # Address decoding functionality
-│   └── utils.rs         # Utility functions
-├── examples/
-│   ├── web/            # Web example
-│   │   ├── index.html  # Web interface
-│   │   └── index.js    # Web JavaScript implementation
-│   └── node/           # Node.js example
-│       └── index.js    # Node.js implementation
-└── pkg/                # Generated WebAssembly package
-```
-
-## Live Demo
-
-Visit the [live demo](https://krakaw.github.io/wallet-decoder/) to try out the decoder.
-
-## Prerequisites
-
-- Rust and Cargo
-- wasm-pack (`cargo install wasm-pack`)
-- A web server (for local testing)
-
-## Local Development
-
-1. Install the required tools:
-```bash
-cargo install wasm-pack
-```
-
-2. Build the WebAssembly module:
-```bash
-wasm-pack build --target web
-```
-
-3. Copy the built files to the docs directory:
-```bash
-mkdir -p docs
-cp -r pkg/* docs/
-cp index.html docs/
-```
-
-4. Serve the files using a web server. For example, using Python:
-```bash
-cd docs
-python3 -m http.server
-```
-
-5. Open `http://localhost:8000` in your web browser.
 
 ## License
 
-This project is licensed under the MIT License. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Security
+
+This project is for educational and development purposes. Always use official Tari tools for production use. 

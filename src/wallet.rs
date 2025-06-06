@@ -1,153 +1,255 @@
-use std::str::FromStr;
+use crate::address::TariAddress;
+use crate::cipher_seed::{CipherSeed};
+use crate::error::{TariError, Result};
+use crate::keys::{KeyManager, PrivateKey, PublicKey};
+use crate::network::Network;
 
-use serde::Serialize;
-use tari_common::configuration::Network;
-use tari_common_types::tari_address::{TariAddress, TariAddressFeatures};
-use tari_core::transactions::transaction_key_manager::key_manager::{
-    DerivedPublicKey, TariKeyManager, 
-};
-use tari_key_manager::{
-    SeedWords,
-    cipher_seed::CipherSeed,
-    key_manager_service::{KeyDigest, KeyManagerBranch},
-    mnemonic::{Mnemonic, MnemonicLanguage},
-};
-use tari_utilities::{  SafePassword, hex::Hex,};
 
-#[derive(Serialize)]
-pub struct WalletInfo {
-    pub birthday: u16,
-    pub seed_words: String,
-    pub view_key: String,
-    pub spend_key: String,
-    pub interactive_address: TariAddress,
-    pub one_sided_address: TariAddress,
-    pub network: String,
-    pub emoji: String,
+/// A complete Tari wallet containing keys and address information
+#[derive(Clone)]
+pub struct TariWallet {
+    network: Network,
+    view_private_key: PrivateKey,
+    spend_private_key: PrivateKey,
+    view_public_key: PublicKey,
+    spend_public_key: PublicKey,
+    address: TariAddress,
+    seed_phrase: String,
 }
 
-pub fn get_key_manager(seed:CipherSeed, branch_key:String) -> TariKeyManager<KeyDigest> {
-    TariKeyManager::<KeyDigest>::from(
-        seed.clone(),
-        branch_key,
-        0,
-    )
+impl TariWallet {
+    /// Create a new wallet from keys and seed phrase
+    pub fn new(
+        network: Network,
+        view_private_key: PrivateKey,
+        spend_private_key: PrivateKey,
+        seed_phrase: String,
+    ) -> Self {
+        let view_public_key = view_private_key.public_key();
+        let spend_public_key = spend_private_key.public_key();
+        
+        let address = TariAddress::new(
+            network,
+            view_public_key.clone(),
+            spend_public_key.clone(),
+            None,
+        );
+
+        Self {
+            network,
+            view_private_key,
+            spend_private_key,
+            view_public_key,
+            spend_public_key,
+            address,
+            seed_phrase,
+        }
+    }
+
+    /// Get the network
+    pub fn network(&self) -> Network {
+        self.network
+    }
+
+    /// Get the view private key
+    pub fn view_private_key(&self) -> &PrivateKey {
+        &self.view_private_key
+    }
+
+    /// Get the spend private key  
+    pub fn spend_private_key(&self) -> &PrivateKey {
+        &self.spend_private_key
+    }
+
+    /// Get the view public key
+    pub fn view_public_key(&self) -> &PublicKey {
+        &self.view_public_key
+    }
+
+    /// Get the spend public key
+    pub fn spend_public_key(&self) -> &PublicKey {
+        &self.spend_public_key
+    }
+
+    /// Get the base address (without payment ID)
+    pub fn address(&self) -> &TariAddress {
+        &self.address
+    }
+
+    /// Get the address in Base58 format
+    pub fn address_base58(&self) -> String {
+        self.address.to_base58()
+    }
+
+    /// Get the address in emoji format
+    pub fn address_emoji(&self) -> String {
+        self.address.to_emoji()
+    }
+
+    /// Get the seed phrase
+    pub fn seed_phrase(&self) -> &str {
+        &self.seed_phrase
+    }
+
+    /// Create an integrated address with payment ID
+    pub fn create_integrated_address(&self, payment_id: Vec<u8>) -> Result<TariAddress> {
+        self.address.with_payment_id(payment_id)
+    }
+
+    /// Get view private key as hex string
+    pub fn view_private_key_hex(&self) -> String {
+        hex::encode(self.view_private_key.as_bytes())
+    }
+
+    /// Get view public key as hex string
+    pub fn view_public_key_hex(&self) -> String {
+        self.view_public_key.to_hex()
+    }
+
+    /// Get spend public key as hex string
+    pub fn spend_public_key_hex(&self) -> String {
+        self.spend_public_key.to_hex()
+    }
+
+    /// Get spend private key as hex string
+    pub fn spend_private_key_hex(&self) -> String {
+        hex::encode(self.spend_private_key.as_bytes())
+    }
 }
 
-fn generate_keys(seed: CipherSeed) -> (DerivedPublicKey, DerivedPublicKey, String) {
-    // Create key managers for view and spend keys
-    let view_key_manager = get_key_manager(seed.clone(), "data encryption".to_string());
-    let spend_key_manager = get_key_manager(seed, KeyManagerBranch::Comms.get_branch_key());
-
-
-
-    // Derive the view and spend keys
-    let view_key = view_key_manager
-        .derive_public_key(0)
-        .expect("Failed to derive view key");
-    let spend_key = spend_key_manager
-        .derive_public_key(0)
-        .expect("Failed to derive spend key");
-    let private_view_key = view_key_manager.get_private_key(0).expect("Failed to derive view key");
-
-    (view_key, spend_key, private_view_key.to_hex())
+impl std::fmt::Debug for TariWallet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TariWallet")
+            .field("network", &self.network)
+            .field("view_private_key", &self.view_private_key_hex())
+            .field("spend_private_key", &self.spend_private_key_hex())
+            .field("view_public_key", &self.view_public_key_hex())
+            .field("spend_public_key", &self.spend_public_key_hex())
+            .field("address", &self.address_base58())
+            .field("address_emoji", &self.address_emoji())
+            .field("seed_phrase", &self.seed_phrase)
+            .finish()
+    }
 }
 
-pub fn generate_wallet(
-    password: Option<SafePassword>,
-    network: String,
-    payment_id: Option<String>,
-) -> Result<WalletInfo, anyhow::Error> {
-    // Create a new cipher seed
-    let seed = CipherSeed::new();
-
-    // Get seed words in English
-    let seed_words = seed
-        .to_mnemonic(MnemonicLanguage::English, password.clone())
-        .expect("Failed to generate seed words")
-        .join(" ");
-    let seed_words = seed_words.reveal().clone();
-    let birthday = seed.birthday();
-
-    let (view_key, spend_key, private_view_key) = generate_keys(seed);
-
-    let network_type = Network::from_str(&network).unwrap_or(Network::MainNet);
-
-    // Create the Tari address
-
-    let interactive_address = TariAddress::new_dual_address_with_default_features(
-        view_key.key.clone(),
-        spend_key.key.clone(),
-        network_type,
-    )
-    .expect("Failed to create Tari address");
-
-    let one_sided_address = TariAddress::new_dual_address(
-        view_key.key.clone(),
-        spend_key.key.clone(),
-        network_type,
-        TariAddressFeatures::create_one_sided_only(),
-            payment_id.map(|id| id.as_bytes().to_vec()),
-    )?;
-
-    Ok(WalletInfo {
-        birthday,
-        seed_words,
-        view_key: private_view_key,
-        spend_key: spend_key.key.to_string(),
-        interactive_address: interactive_address.clone(),
-        one_sided_address: one_sided_address.clone(),
-        network,
-        emoji: interactive_address.to_emoji_string(),
-    })
+/// Tari address generator - main interface for creating and restoring wallets
+pub struct TariAddressGenerator {
+    passphrase: Option<String>,
 }
 
-pub fn load_wallet_from_seed_phrase(
-    seed_phrase: &str,
-    network: String,
-    password: Option<SafePassword>,
-    payment_id: Option<String>,
-) -> Result<WalletInfo, anyhow::Error> {
-    // Parse the seed phrase into words
-    let seed_words = SeedWords::from_str(seed_phrase)
-        .map_err(|e| anyhow::anyhow!("Invalid seed phrase: {}", e))?;
+impl TariAddressGenerator {
+    /// Create a new generator with default passphrase
+    pub fn new() -> Self {
+        Self {
+            passphrase: None,
+        }
+    }
 
-    // Create a mnemonic from the words
-    let seed = CipherSeed::from_mnemonic(&seed_words, password)
-        .map_err(|e| anyhow::anyhow!("Failed to create cipher seed: {}", e))?;
+    /// Create a new generator with custom passphrase
+    pub fn with_passphrase(passphrase: Option<String>) -> Self {
+        Self { passphrase }
+    }
 
-    println!("seed: {:#?}", seed);
-    let birthday = seed.birthday();
-    // Print birthday as bytes
-    println!("birthday: {:?}", birthday.to_le_bytes());
-    let (view_key, spend_key, private_view_key) = generate_keys(seed.clone());
+    /// Generate a new wallet
+    pub fn generate_new_wallet(&self, network: Network) -> Result<TariWallet> {
+        // Generate new cipher seed
+        let cipher_seed = CipherSeed::new()?;
+        // Convert to mnemonic
+        let seed_phrase = cipher_seed.to_mnemonic(self.passphrase.clone())?;
+        // Create key manager with entropy as master key
+        let master_key = cipher_seed.master_key();
+        let key_manager = KeyManager::new(master_key);
+        // Derive keys
+        let spend_private_key = key_manager.derive_key("comms", 0)?;
+        let view_private_key = key_manager.derive_key("data encryption", 0)?;
+        Ok(TariWallet::new(
+            network,
+            view_private_key,
+            spend_private_key,
+            seed_phrase,
+        ))
+    }
 
-    let network_type = Network::from_str(&network).unwrap_or(Network::MainNet);
+    /// Restore wallet from seed phrase
+    pub fn restore_from_seed_phrase(&self, seed_phrase: &str, network: Network) -> Result<TariWallet> {
+        // Convert back to cipher seed
+        let cipher_seed = CipherSeed::from_mnemonic(seed_phrase, self.passphrase.clone())?;
+        // Create key manager with entropy as master key
+        let master_key = cipher_seed.master_key();
+        let key_manager = KeyManager::new(master_key);
+        // Derive keys (same as generation)
+        let spend_private_key = key_manager.derive_key("comms", 0)?;
+        let view_private_key = key_manager.derive_key("data encryption", 0)?;
+        Ok(TariWallet::new(
+            network,
+            view_private_key,
+            spend_private_key,
+            seed_phrase.to_string(),
+        ))
+    }
 
-    let interactive_address = TariAddress::new_dual_address_with_default_features(
-        view_key.key.clone(),
-        spend_key.key.clone(),
-        network_type,
-    )?;
+    /// Restore wallet from entropy directly
+    pub fn restore_from_entropy(&self, entropy: &[u8], network: Network) -> Result<TariWallet> {
+        if entropy.len() != 16 {
+            return Err(TariError::InvalidKeyLength {
+                expected: 16,
+                actual: entropy.len(),
+            });
+        }
+        let mut master_key = [0u8; 16];
+        master_key.copy_from_slice(entropy);
+        let key_manager = KeyManager::new(master_key);
+        // Derive keys
+        let spend_private_key = key_manager.derive_key("comms", 0)?;
+        let view_private_key = key_manager.derive_key("data encryption", 0)?;
+        // Create a cipher seed for mnemonic generation
+        let cipher_seed = CipherSeed::from_components(0x02, 0, master_key, [0u8; 5]);
+        let seed_phrase = cipher_seed.to_mnemonic(self.passphrase.clone())?;
+        Ok(TariWallet::new(
+            network,
+            view_private_key,
+            spend_private_key,
+            seed_phrase,
+        ))
+    }
 
-    let one_sided_address = TariAddress::new_dual_address(
-        view_key.key.clone(),
-        spend_key.key.clone(),
-        network_type,
-        TariAddressFeatures::create_one_sided_only(),
-        payment_id.map(|id| id.as_bytes().to_vec()),
-    )?;
+    /// Generate multiple wallets at once
+    pub fn generate_multiple_wallets(&self, network: Network, count: usize) -> Result<Vec<TariWallet>> {
+        let mut wallets = Vec::with_capacity(count);
+        
+        for _ in 0..count {
+            wallets.push(self.generate_new_wallet(network)?);
+        }
+        
+        Ok(wallets)
+    }
 
-    Ok(WalletInfo {
-        birthday,
-        seed_words: seed_phrase.to_string(),
-        view_key: private_view_key,
-        spend_key: spend_key.key.to_string(),
-        interactive_address: interactive_address.clone(),
-        one_sided_address: one_sided_address.clone(),
-        network,
-        emoji: interactive_address.to_emoji_string(),
-    })
+    /// Validate a seed phrase
+    pub fn validate_seed_phrase(&self, seed_phrase: &str) -> bool {
+        CipherSeed::from_mnemonic(seed_phrase, self.passphrase.clone()).is_ok()
+    }
+
+    /// Parse address from string (auto-detect format)
+    pub fn parse_address(&self, address_str: &str) -> Result<TariAddress> {
+
+        // Try emoji first (contains Unicode)
+        if address_str.trim().chars().any(|c| !c.is_ascii()) {
+            TariAddress::from_emoji(address_str)
+        } else {
+            // Try Base58 if that fails, try hex
+            if let Ok(address) = TariAddress::from_base58(address_str) {
+                Ok(address)
+            } else {
+                TariAddress::from_hex(address_str)
+            }
+        }
+    }
+}
+
+impl Default for TariAddressGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -155,141 +257,197 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_generate_wallet_mainnet() {
-        let result = generate_wallet(None, "mainnet".to_string()).unwrap();
-        assert!(!result.seed_words.is_empty());
-        assert!(!result.view_key.is_empty());
-        assert!(!result.spend_key.is_empty());
-        assert_eq!(result.network, "mainnet");
-        assert!(!result.emoji.is_empty());
-        assert_eq!(result.interactive_address.network(), Network::MainNet);
+    fn test_wallet_generation() {
+        let generator = TariAddressGenerator::new();
+        let wallet = generator.generate_new_wallet(Network::MainNet).unwrap();
+        
+        assert_eq!(wallet.network(), Network::MainNet);
+        assert!(!wallet.seed_phrase().is_empty());
+        assert!(!wallet.address_base58().is_empty());
+        assert!(!wallet.address_emoji().is_empty());
     }
 
     #[test]
-    fn test_generate_wallet_with_password() {
-        let password = SafePassword::from("test_password");
-        let result = generate_wallet(Some(password), "mainnet".to_string()).unwrap();
-        assert!(!result.seed_words.is_empty());
-        assert!(!result.view_key.is_empty());
-        assert!(!result.spend_key.is_empty());
-    }
-
-    #[test]
-    fn test_generate_wallet_different_networks() {
-        let networks = vec!["mainnet", "nextnet", "esmeralda"];
-        for network in networks {
-            let result = generate_wallet(None, network.to_string()).unwrap();
-            assert_eq!(result.network, network);
-            match network {
-                "mainnet" => assert_eq!(result.interactive_address.network(), Network::MainNet),
-                "nextnet" => assert_eq!(result.interactive_address.network(), Network::NextNet),
-                "esmeralda" => assert_eq!(result.interactive_address.network(), Network::Esmeralda),
-                _ => panic!("Unexpected network"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_load_wallet_from_seed_phrase() {
-        // First generate a wallet to get a valid seed phrase
-        let generated = generate_wallet(None, "mainnet".to_string()).unwrap();
-
-        // Now try to load it
-        let loaded =
-            load_wallet_from_seed_phrase(&generated.seed_words, "mainnet".to_string(), None)
-                .unwrap();
-
-        // Verify the loaded wallet matches the generated one
-        assert_eq!(loaded.seed_words, generated.seed_words);
-        assert_eq!(loaded.view_key, generated.view_key);
-        assert_eq!(loaded.spend_key, generated.spend_key);
-        assert_eq!(loaded.network, generated.network);
-        assert_eq!(loaded.emoji, generated.emoji);
-    }
-
-    #[test]
-    fn test_load_wallet_with_password() {
-        // Generate a wallet with password
-        let password = SafePassword::from("test_password");
-        let generated = generate_wallet(Some(password.clone()), "mainnet".to_string()).unwrap();
-
-        // Load it with the same password
-        let loaded = load_wallet_from_seed_phrase(
-            &generated.seed_words,
-            "mainnet".to_string(),
-            Some(password),
-        )
-        .unwrap();
-
-        // Verify the loaded wallet matches the generated one
-        assert_eq!(loaded.seed_words, generated.seed_words);
-        assert_eq!(loaded.view_key, generated.view_key);
-        assert_eq!(loaded.spend_key, generated.spend_key);
-    }
-
-    #[test]
-    fn test_load_wallet_invalid_seed_phrase() {
-        let result =
-            load_wallet_from_seed_phrase("invalid seed phrase", "mainnet".to_string(), None);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_load_wallet_wrong_password() {
-        // Generate a wallet with password
-        let password = SafePassword::from("correct_password");
-        let generated = generate_wallet(Some(password), "mainnet".to_string()).unwrap();
-
-        // Try to load it with wrong password
-        let wrong_password = SafePassword::from("wrong_password");
-        let result = load_wallet_from_seed_phrase(
-            &generated.seed_words,
-            "mainnet".to_string(),
-            Some(wrong_password),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_load_wallet_different_networks() {
+    fn test_wallet_restoration() {
+        let generator = TariAddressGenerator::new();
+        
         // Generate a wallet
-        let generated = generate_wallet(None, "mainnet".to_string()).unwrap();
+        let original = generator.generate_new_wallet(Network::MainNet).unwrap();
+        let seed_phrase = original.seed_phrase().to_string();
+        
+        // Restore from seed phrase
+        let restored = generator
+            .restore_from_seed_phrase(&seed_phrase, Network::MainNet)
+            .unwrap();
+        
+        // Should have same keys and address
+        assert_eq!(original.view_private_key().as_bytes(), restored.view_private_key().as_bytes());
+        assert_eq!(original.spend_private_key().as_bytes(), restored.spend_private_key().as_bytes());
+        assert_eq!(original.address_base58(), restored.address_base58());
+    }
 
-        // Try loading it with different networks
-        let networks = vec!["mainnet", "nextnet", "esmeralda"];
-        for network in networks {
-            let loaded =
-                load_wallet_from_seed_phrase(&generated.seed_words, network.to_string(), None)
-                    .unwrap();
-            assert_eq!(loaded.network, network);
-            match network {
-                "mainnet" => assert_eq!(loaded.interactive_address.network(), Network::MainNet),
-                "nextnet" => assert_eq!(loaded.interactive_address.network(), Network::NextNet),
-                "esmeralda" => assert_eq!(loaded.interactive_address.network(), Network::Esmeralda),
-                _ => panic!("Unexpected network"),
+    #[test]
+    fn test_integrated_address() {
+        let generator = TariAddressGenerator::new();
+        let wallet = generator.generate_new_wallet(Network::MainNet).unwrap();
+        
+        let payment_id = b"test_payment_123".to_vec();
+        let integrated_address = wallet.create_integrated_address(payment_id.clone()).unwrap();
+        
+        assert!(integrated_address.features().has_payment_id());
+        assert_eq!(integrated_address.payment_id(), Some(payment_id.as_slice()));
+    }
+
+    #[test]
+    fn test_multiple_wallets() {
+        let generator = TariAddressGenerator::new();
+        let wallets = generator.generate_multiple_wallets(Network::MainNet, 3).unwrap();
+        
+        assert_eq!(wallets.len(), 3);
+        
+        // All wallets should be unique
+        for i in 0..wallets.len() {
+            for j in (i + 1)..wallets.len() {
+                assert_ne!(wallets[i].address_base58(), wallets[j].address_base58());
+                assert_ne!(wallets[i].seed_phrase(), wallets[j].seed_phrase());
             }
         }
     }
 
     #[test]
-    fn test_wallet_with_known_values() {
-        let seed_phrase = "gate egg ticket brisk steel chef more mean blouse busy always slow oppose leaf possible lottery cruel penalty sheriff acid media extend train enable";
-        let expected_view_key = "375ce00ddadcfde47128858730a12a2e7ef33a4ce5ceafd3dd689324b1c7a10c";
-        let expected_spend_key = "2ab1c61a811588a3fa346a6deda0df936e5a17db0ab8b0d96638e81552c3877d";
-        let expected_interactive_address = "347ZTThqvfgmwidceBgNbLcP6AAjQPWxtjAExfBFrLcWRf8KSWtP8BGWEZ8UQWtpSQQNBijpfJMXEByTRTV38f7JMND";
-        let expected_interactive_emoji = "🌈🌊🎤🎲🎡🍐🔭🌸😷💼🐯🔱💐👃🐍🌹🍋💰🍣🐾🐵🐾💤🍗💎👙⭐🌹🎪💎🐴🏥🎮🌸🥝👂📈🍉🐪🍄🦂🥊🚪🍳🏰🐊🚁👞🔱👀🐌🎹🍆🔫🎋💡💋🔩🏠🍷😷🍄🎮💺🦆🦋🍗";
+    fn test_seed_phrase_validation() {
+        let generator = TariAddressGenerator::new();
+        let wallet = generator.generate_new_wallet(Network::MainNet).unwrap();
+        
+        assert!(generator.validate_seed_phrase(wallet.seed_phrase()));
+        assert!(!generator.validate_seed_phrase("invalid seed phrase"));
+    }
 
-        // Test loading the wallet from seed phrase
-        let loaded =
-            load_wallet_from_seed_phrase(seed_phrase, "nextnet".to_string(), None).unwrap();
+    #[test]
+    fn test_custom_passphrase() {
+        let custom_passphrase = "my_custom_passphrase".to_string();
+        let generator = TariAddressGenerator::with_passphrase(Some(custom_passphrase));
+        
+        let wallet = generator.generate_new_wallet(Network::MainNet).unwrap();
+        assert!(!wallet.seed_phrase().is_empty());
+    }
 
+    #[test]
+    fn test_entropy_restoration() {
+        let generator = TariAddressGenerator::new();
+        let entropy = [42u8; 16];
+        
+        let wallet1 = generator.restore_from_entropy(&entropy, Network::MainNet).unwrap();
+        let wallet2 = generator.restore_from_entropy(&entropy, Network::MainNet).unwrap();
+        
+        // Same entropy should produce same wallet
+        assert_eq!(wallet1.address_base58(), wallet2.address_base58());
+        assert_eq!(wallet1.view_private_key().as_bytes(), wallet2.view_private_key().as_bytes());
+    }
 
-        // Verify the loaded wallet matches the expected values
-        assert_eq!(loaded.seed_words, seed_phrase);
-        assert_eq!(loaded.view_key, expected_view_key);
-        assert_eq!(loaded.spend_key, expected_spend_key);
-        assert_eq!(loaded.network, "nextnet");
-        assert_eq!(loaded.interactive_address.to_base58(), expected_interactive_address);
-        assert_eq!(loaded.emoji, expected_interactive_emoji);
+    #[test]
+    fn test_wallet_roundtrip_all_fields() {
+        let generator = TariAddressGenerator::new();
+        
+        // Generate a wallet
+        let original = generator.generate_new_wallet(Network::MainNet).unwrap();
+        
+        // Extract all fields
+        let original_network = original.network();
+        let original_view_private_key = original.view_private_key().as_bytes().to_vec();
+        let original_spend_private_key = original.spend_private_key().as_bytes().to_vec();
+        let original_view_public_key = original.view_public_key().to_hex();
+        let original_spend_public_key = original.spend_public_key().to_hex();
+        let original_address_base58 = original.address_base58();
+        let original_address_emoji = original.address_emoji();
+        let original_seed_phrase = original.seed_phrase().to_string();
+        
+        // Restore from seed phrase
+        let restored = generator
+            .restore_from_seed_phrase(&original_seed_phrase, original_network)
+            .unwrap();
+        
+        // Verify all fields match
+        assert_eq!(restored.network(), original_network);
+        assert_eq!(restored.view_private_key().as_bytes(), original_view_private_key.as_slice());
+        assert_eq!(restored.spend_private_key().as_bytes(), original_spend_private_key.as_slice());
+        assert_eq!(restored.view_public_key().to_hex(), original_view_public_key);
+        assert_eq!(restored.spend_public_key().to_hex(), original_spend_public_key);
+        assert_eq!(restored.address_base58(), original_address_base58);
+        assert_eq!(restored.address_emoji(), original_address_emoji);
+        assert_eq!(restored.seed_phrase(), original_seed_phrase);
+    }
+
+    #[test]
+    fn test_specific_seed_phrase_known_values() {
+        let test_cases = vec![
+            (
+                "scare prepare endorse call sword gym combine wide volume wide crouch real spirit scale patch guilt another flag silly age inmate firm jump chimney",
+                Network::MainNet,
+                "1222568e27857aa29efa4f7e7c65cdd3a279e265e8acb43326c29208334dd40f", // expected_view_private_key
+                "2870b3b5088b21622820bad5e8eeaee3414a895b72555b3a34774a9aad9a1978", // expected_view_public_key
+                "2c83d350616dc2a859358bdebbfb91451e6b4f9d2637e8a013d339d0b1389516", // expected_spend_public_key
+                "124Zz45Bio6Y6k6a5DQBRwMti5UZynHpyYtAG1nJNHGw7JMv2AP6wgwAoHuA1Uh3HSwoKwVHdhdzSUtuBjspDfRm18N", // expected base58 address
+                "🐢📟🍞🦁💎💔🌕🐶🍑🏁🍞🍐💤🔥😷🚂💉😈🤖🎤🐴🎺🐑🎲🎺🍾🍳🐙🎤👖💈👖🍈🐚🍦🐭🔑🎬🏀🐊💵👽🎸🥄🐶🔮💦🚫🐽🎓🍍🐀🎪👙🍗🍶😷👞🍀🔑🍸🔋👂🍷👑🥑🎥", // expected emoji address
+
+            )
+        ];
+
+        for (seed_phrase, network, expected_view_private_key, expected_view_public_key, expected_spend_public_key, expected_base58_address, expected_emoji_address) in test_cases {
+            test_wallet_from_seed_phrase(
+                seed_phrase,
+                network,
+                expected_view_private_key,
+                expected_view_public_key,
+                expected_spend_public_key,
+                expected_base58_address,
+                expected_emoji_address,
+            );
+        }
+    }
+
+    fn test_wallet_from_seed_phrase(
+        seed_phrase: &str,
+        network: Network,
+        expected_view_private_key: &str,
+        expected_view_public_key: &str,
+        expected_spend_public_key: &str,
+        expected_base58_address: &str,
+        expected_emoji_address: &str,
+    ) {
+        let generator = TariAddressGenerator::new();
+
+        // First, let's check if this is a valid BIP39 mnemonic
+        // println!("Testing seed phrase: {}", seed_phrase); // Original had a println, can be removed later
+
+        // Restore wallet from the specific seed phrase
+        let wallet = generator
+            .restore_from_seed_phrase(seed_phrase, network)
+            .unwrap(); // Original test used unwrap
+
+        // Verify expected values
+        assert_eq!(wallet.network(), network);
+        assert_eq!(wallet.seed_phrase(), seed_phrase);
+
+        // Check private view key
+        // println!("Expected view private key: {}", expected_view_private_key);
+        // println!("Actual view private key:   {}", wallet.view_private_key_hex());
+        assert_eq!(wallet.view_private_key_hex(), expected_view_private_key);
+
+        // Check public view key
+        // println!("Expected view public key: {}", expected_view_public_key);
+        // println!("Actual view public key:   {}", wallet.view_public_key_hex());
+        assert_eq!(wallet.view_public_key_hex(), expected_view_public_key);
+
+        // Check spend key
+        // println!("Expected spend public key: {}", expected_spend_public_key);
+        // println!("Actual spend public key:   {}", wallet.spend_public_key_hex());
+        assert_eq!(wallet.spend_public_key_hex(), expected_spend_public_key);
+
+        // Check base58 address
+        assert_eq!(wallet.address_base58(), expected_base58_address);
+
+        // Check emoji address
+        assert_eq!(wallet.address_emoji(), expected_emoji_address);
     }
 }

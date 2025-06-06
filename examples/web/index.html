@@ -1,62 +1,398 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tari Address Decoder - Web Example</title>
+    <title>Tari Address Tools</title>
+    <link rel="icon" type="image/png" href="icon.png">
     <style>
         body {
             font-family: Arial, sans-serif;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
+            background-color: #202326;
+            color: #e0e0e0;
+            position: relative;
         }
-        .container {
-            background-color: #f5f5f5;
-            padding: 20px;
+        * {
+            box-sizing: border-box;
+        }
+        .github-links {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: right;
+            gap: 10px;
+        }
+        .github-links a {
+            color: #e0e0e0;
+        }
+        .input-group {
+            margin-bottom: 20px;
+            background-color: #2d2d2d;
+            padding: 25px;
             border-radius: 8px;
-        }
-        .form-group {
-            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         input[type="text"] {
             width: 100%;
-            padding: 8px;
-            margin-top: 5px;
-            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid #404040;
             border-radius: 4px;
+            font-size: 14px;
+            background-color: #333;
+            color: #e0e0e0;
+        }
+        input[type="text"]::placeholder {
+            color: #888;
         }
         button {
+            padding: 12px 24px;
             background-color: #4CAF50;
             color: white;
-            padding: 10px 15px;
             border: none;
-            border-radius: 4px;
             cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background-color 0.3s;
         }
         button:hover {
             background-color: #45a049;
         }
-        #result {
+        .result-container {
             margin-top: 20px;
+            max-height: 70vh;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        .result-item {
+            background-color: #2d2d2d;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .result-item h3 {
+            margin-top: 0;
+            color: #e0e0e0;
+            border-bottom: 1px solid #404040;
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+            word-break: break-all;
+            overflow-wrap: break-word;
+        }
+        .result-content {
+            font-family: monospace;
             white-space: pre-wrap;
-            background-color: white;
-            padding: 15px;
+            word-break: break-all;
+            overflow-wrap: break-word;
+            background-color: #333;
+            padding: 20px;
             border-radius: 4px;
-            border: 1px solid #ddd;
+            margin-top: 15px;
+            color: #e0e0e0;
+        }
+        .selectable {
+            cursor: pointer;
+            user-select: all;
+            padding: 2px 4px;
+            border-radius: 2px;
+            background-color: #404040;
+            word-break: break-all;
+            overflow-wrap: break-word;
+        }
+        .selectable:hover {
+            background-color: #505050;
+        }
+        .error {
+            color: #ff6b6b;
+            background-color: #3d1f1f;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .banner {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 20px;
+        }
+        .banner img {
+            height: 80px;
+            width: 80px;
+            object-fit: contain;
+        }
+        .banner h1 {
+            margin: 0;
+            color: #e0e0e0;
+        }
+        .network-selector {
+            margin-bottom: 15px;
+        }
+        .network-selector select {
+            padding: 10px;
+            background-color: #333;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            width: 100%;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #404040;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+            background-color: #2d2d2d;
+        }
+        .tab.active {
+            background-color: #333;
+            border-color: #404040;
+            border-bottom-color: #333;
+            margin-bottom: -1px;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Tari Address Decoder</h1>
-        <div class="form-group">
-            <label for="address">Enter Tari Address:</label>
-            <input type="text" id="address" placeholder="Enter a Tari address...">
-        </div>
-        <button onclick="decodeAddress()">Decode Address</button>
-        <div id="result"></div>
+    <div class="github-links">
+        <a href="https://github.com/tari-project/tari-address-generator" target="_blank" style="text-decoration: none; color: #333;">
+            <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub" style="height: 20px; vertical-align: middle;">
+        </a>
     </div>
-    <script src="./index.js"></script>
+    <div class="banner">
+        <img src="icon.png" alt="Tari Icon">
+        <h1>Tari Address Tools</h1>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('decode')">Decode Address</div>
+        <div class="tab" onclick="switchTab('generate')">Generate Wallet</div>
+    </div>
+
+    <div id="decode-tab" class="tab-content active">
+        <div class="input-group">
+            <input type="text" id="address" placeholder="Enter Tari address" autofocus>
+            <button onclick="decodeAddress()">Decode Address</button>
+        </div>
+        <div id="preview" class="result-container" style="opacity: 0.7;"></div>
+        <div id="decode-result" class="result-container"></div>
+    </div>
+
+    <div id="generate-tab" class="tab-content">
+        <div class="input-group">
+            <div class="network-selector">
+                <select id="network">
+                    <option value="mainnet">Mainnet</option>
+                    <option value="nextnet">Nextnet</option>
+                    <option value="esmeralda">Esmeralda</option>
+                </select>
+            </div>
+            <input type="text" id="seedPhrase" placeholder="Enter seed phrase (optional)">
+            <input type="text" id="paymentId" placeholder="Enter payment ID (optional)">
+            <button onclick="generateWallet()">Generate Wallet</button>
+        </div>
+        <div id="generate-result" class="result-container"></div>
+    </div>
+
+    <script type="module">
+        import init, { WasmTariAddressGenerator } from './tari_address_generator.js';
+
+        let generator = null;
+        let currentPreview = null;
+        let debounceTimer = null;
+
+        async function run() {
+            try {
+                await init();
+                generator = new WasmTariAddressGenerator();
+                
+                // Add input event listener for live preview
+                const addressInput = document.getElementById('address');
+                addressInput.addEventListener('input', handleInput);
+                // Add keydown event listener for Enter key
+                addressInput.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        decodeAddress();
+                    }
+                });
+
+                // Process any addresses from URL parameters
+                const urlParams = new URLSearchParams(window.location.search);
+                const addresses = urlParams.getAll('address');
+                if (addresses.length > 0) {
+                    for (const address of addresses) {
+                        await decodeAndDisplayAddress(address, true);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to initialize WASM module:', error);
+                document.getElementById('decode-result').innerHTML = `
+                    <div class="error">
+                        Failed to initialize WASM module. Please check the console for details.
+                    </div>`;
+            }
+        }
+
+        function handleInput(event) {
+            const address = event.target.value;
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = setTimeout(() => {
+                if (address) {
+                    decodeAndDisplayAddress(address, false);
+                } else {
+                    clearPreview();
+                }
+            }, 300); // 300ms debounce
+        }
+
+        function clearPreview() {
+            const previewDiv = document.getElementById('preview');
+            previewDiv.innerHTML = '';
+            currentPreview = null;
+        }
+
+        window.decodeAddress = async function() {
+            const address = document.getElementById('address').value;
+            if (!address) return;
+            
+            await decodeAndDisplayAddress(address, true);
+            document.getElementById('address').value = '';
+            clearPreview();
+        };
+
+        async function decodeAndDisplayAddress(address, isPermanent) {
+            const targetDiv = isPermanent ? document.getElementById('decode-result') : document.getElementById('preview');
+            
+            try {
+                if (!generator) {
+                    throw new Error('WASM module not initialized');
+                }
+                console.log('Decoding address:', address);
+                const parsed = generator.parse_address(address);
+                
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <h3>Address: ${address}</h3>
+                    <div class="result-content">
+Base58: <span class="selectable">${parsed.to_base58()}</span>
+Emoji: <span class="selectable">${parsed.to_emoji()}</span>
+Network: <span class="selectable">${parsed.network()}</span>
+Has Payment ID: <span class="selectable">${parsed.has_payment_id()}</span>
+${parsed.has_payment_id() ? `Payment ID: <span class="selectable">${parsed.payment_id()}</span>` : ''}
+                    </div>
+                `;
+
+                if (isPermanent) {
+                    targetDiv.insertBefore(resultItem, targetDiv.firstChild);
+                } else {
+                    clearPreview();
+                    targetDiv.appendChild(resultItem);
+                    currentPreview = resultItem;
+                }
+            } catch (error) {
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <h3>Address: ${address}</h3>
+                    <div class="error">Error: ${error.message ? error.message : error}</div>
+                `;
+
+                if (isPermanent) {
+                    targetDiv.insertBefore(resultItem, targetDiv.firstChild);
+                } else {
+                    clearPreview();
+                    targetDiv.appendChild(resultItem);
+                    currentPreview = resultItem;
+                }
+                console.error('Error decoding address:', error);
+            }
+        }
+
+        window.generateWallet = async function() {
+            if (!generator) {
+                alert('WASM module not initialized');
+                return;
+            }
+
+            const network = document.getElementById('network').value;
+            const seedPhrase = document.getElementById('seedPhrase').value;
+            const paymentId = document.getElementById('paymentId').value;
+
+            try {
+                let wallet;
+                if (seedPhrase) {
+                    wallet = generator.restore_from_seed_phrase(seedPhrase, network);
+                } else {
+                    wallet = generator.generate_new_wallet(network);
+                }
+
+                let address = wallet.address_base58();
+                if (paymentId) {
+                    const newAddress = wallet.new_address_with_payment_id(paymentId);
+                    address = newAddress.to_base58();
+                }
+
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <h3>Generated Wallet</h3>
+                    <div class="result-content">
+Network: <span class="selectable">${wallet.network()}</span>
+Base58 Address: <span class="selectable">${wallet.address_base58()}</span>
+Emoji Address: <span class="selectable">${wallet.address_emoji()}</span>
+Seed Phrase: <span class="selectable">${wallet.seed_phrase()}</span>
+View Private Key: <span class="selectable">${wallet.view_private_key_hex()}</span>
+Spend Private Key: <span class="selectable">${wallet.spend_private_key_hex()}</span>
+View Public Key: <span class="selectable">${wallet.view_public_key_hex()}</span>
+Spend Public Key: <span class="selectable">${wallet.spend_public_key_hex()}</span>
+${paymentId ? `Payment ID: <span class="selectable">${paymentId}</span>` : ''}
+                    </div>
+                `;
+
+                document.getElementById('generate-result').insertBefore(resultItem, document.getElementById('generate-result').firstChild);
+            } catch (error) {
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                resultItem.innerHTML = `
+                    <h3>Error</h3>
+                    <div class="error">${error.message}</div>
+                `;
+                document.getElementById('generate-result').insertBefore(resultItem, document.getElementById('generate-result').firstChild);
+                console.error('Error:', error);
+            }
+        };
+
+        window.switchTab = function(tabName) {
+            // Update tab styles
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Activate selected tab
+            document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+        };
+
+        run();
+    </script>
 </body>
 </html> 
