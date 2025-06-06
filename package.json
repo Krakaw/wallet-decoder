@@ -2,16 +2,22 @@
   "name": "wallet-decoder",
   "type": "module",
   "collaborators": [
-    "Krakaw"
+    "Krakaw <krakaw@krakaw.com>"
   ],
-  "version": "0.1.6",
+  "description": "A Rust library for generating and managing Tari wallet addresses",
+  "version": "1.0.0",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/krakaw/wallet-decoder"
+  },
   "files": [
-    "wallet_decoder_bg.wasm",
-    "wallet_decoder.js",
-    "wallet_decoder.d.ts"
+    "tari_address_generator_bg.wasm",
+    "tari_address_generator.js",
+    "tari_address_generator.d.ts"
   ],
-  "main": "wallet_decoder.js",
-  "types": "wallet_decoder.d.ts",
+  "main": "tari_address_generator.js",
+  "types": "tari_address_generator.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

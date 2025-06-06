@@ -1,0 +1,36 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_wasmtariaddressgenerator_free: (a: number, b: number) => void;
+export const wasmtariaddressgenerator_new: () => [number, number, number];
+export const wasmtariaddressgenerator_generate_new_wallet: (a: number, b: number, c: number) => [number, number, number];
+export const wasmtariaddressgenerator_restore_from_seed_phrase: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const wasmtariaddressgenerator_parse_address: (a: number, b: number, c: number) => [number, number, number];
+export const wasmtariaddressgenerator_validate_seed_phrase: (a: number, b: number, c: number) => number;
+export const __wbg_wasmtariwallet_free: (a: number, b: number) => void;
+export const wasmtariwallet_address_base58: (a: number) => [number, number];
+export const wasmtariwallet_address_emoji: (a: number) => [number, number];
+export const wasmtariwallet_seed_phrase: (a: number) => [number, number];
+export const wasmtariwallet_network: (a: number) => [number, number];
+export const wasmtariwallet_new_address_with_payment_id: (a: number, b: number, c: number) => [number, number, number];
+export const wasmtariwallet_view_private_key_hex: (a: number) => [number, number];
+export const wasmtariwallet_spend_private_key_hex: (a: number) => [number, number];
+export const wasmtariwallet_view_public_key_hex: (a: number) => [number, number];
+export const wasmtariwallet_spend_public_key_hex: (a: number) => [number, number];
+export const __wbg_wasmtariaddress_free: (a: number, b: number) => void;
+export const wasmtariaddress_to_base58: (a: number) => [number, number];
+export const wasmtariaddress_to_emoji: (a: number) => [number, number];
+export const wasmtariaddress_network: (a: number) => [number, number];
+export const wasmtariaddress_has_payment_id: (a: number) => number;
+export const wasmtariaddress_payment_id: (a: number) => [number, number];
+export const decode_tari_address: (a: number, b: number) => [number, number, number];
+export const init_panic_hook: () => void;
+export const init: () => void;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_exn_store: (a: number) => void;
+export const __externref_table_alloc: () => number;
+export const __wbindgen_export_4: WebAssembly.Table;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_start: () => void;
