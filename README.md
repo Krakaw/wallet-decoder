@@ -47,13 +47,13 @@ The CLI provides the following commands:
 
 ```bash
 # Generate a new wallet
-tari-address-generator generate [--network NETWORK] [--password PASSWORD] [--payment-id PAYMENT_ID]
+wallet-decoder generate [--network NETWORK] [--password PASSWORD] [--payment-id PAYMENT_ID]
 
 # Decode a Tari address
-tari-address-generator decode <ADDRESS>
+wallet-decoder decode <ADDRESS>
 
 # Load a wallet from seed phrase
-tari-address-generator load <SEED_PHRASE> [--network NETWORK] [--password PASSWORD] [--payment-id PAYMENT_ID]
+wallet-decoder load <SEED_PHRASE> [--network NETWORK] [--password PASSWORD] [--payment-id PAYMENT_ID]
 ```
 
 ### Options
@@ -68,8 +68,8 @@ tari-address-generator load <SEED_PHRASE> [--network NETWORK] [--password PASSWO
 
 ```bash
 # Clone the repository
-git clone https://github.com/tari-project/tari-address-generator.git
-cd tari-address-generator
+git clone https://github.com/Krakaw/wallet-decoder.git
+cd wallet-decoder
 
 # Build the project
 cargo build --release
