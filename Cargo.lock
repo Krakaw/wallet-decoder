@@ -721,34 +721,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tari-address-generator"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "bip39",
- "blake2",
- "bs58",
- "chacha20",
- "clap",
- "console_error_panic_hook",
- "crc32fast",
- "curve25519-dalek",
- "getrandom",
- "hex",
- "js-sys",
- "lazy_static",
- "once_cell",
- "rand",
- "rand_chacha",
- "thiserror",
- "tokio",
- "wasm-bindgen",
- "wasm-bindgen-test",
- "web-sys",
- "zeroize",
-]
-
-[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -853,6 +825,34 @@ checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
 dependencies = [
  "same-file",
  "winapi-util",
+]
+
+[[package]]
+name = "wallet-decoder"
+version = "1.0.0"
+dependencies = [
+ "argon2",
+ "bip39",
+ "blake2",
+ "bs58",
+ "chacha20",
+ "clap",
+ "console_error_panic_hook",
+ "crc32fast",
+ "curve25519-dalek",
+ "getrandom",
+ "hex",
+ "js-sys",
+ "lazy_static",
+ "once_cell",
+ "rand",
+ "rand_chacha",
+ "thiserror",
+ "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+ "web-sys",
+ "zeroize",
 ]
 
 [[package]]

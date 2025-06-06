@@ -1,11 +1,12 @@
 [package]
-name = "tari-address-generator"
-version = "0.1.0"
+name = "wallet-decoder"
+version = "1.0.0"
 edition = "2021"
 description = "A Rust library for generating and managing Tari wallet addresses"
 license = "BSD-3-Clause"
-authors = ["Your Name <your.email@example.com>"]
-repository = "https://github.com/your-username/tari-address-generator"
+authors = ["Krakaw <krakaw@krakaw.com>"]
+repository = "https://github.com/krakaw/wallet-decoder"
+
 
 [dependencies]
 curve25519-dalek = "4.1"
