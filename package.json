@@ -1,15 +1,15 @@
 {
-  "name": "tari-address-generator",
+  "name": "wallet-decoder",
   "type": "module",
   "collaborators": [
-    "Your Name <your.email@example.com>"
+    "Krakaw <krakaw@krakaw.com>"
   ],
   "description": "A Rust library for generating and managing Tari wallet addresses",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "license": "BSD-3-Clause",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/tari-address-generator"
+    "url": "https://github.com/krakaw/wallet-decoder"
   },
   "files": [
     "tari_address_generator_bg.wasm",
