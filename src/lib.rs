@@ -30,6 +30,7 @@ pub mod keys;
 pub mod network;
 pub mod wallet;
 pub mod wordlist;
+pub mod utils;
 
 #[cfg(feature = "wasm-bindgen")]
 pub mod wasm;
@@ -40,6 +41,7 @@ pub use error::{TariError, Result};
 pub use keys::{PrivateKey, PublicKey, KeyManager};
 pub use network::Network;
 pub use wallet::{TariWallet, TariAddressGenerator};
+pub use utils::bytes_to_ascii_string;
 
 // Re-export commonly used types
 pub use bip39::Mnemonic;

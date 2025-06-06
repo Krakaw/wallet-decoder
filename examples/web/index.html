@@ -208,7 +208,7 @@
     </div>
 
     <script type="module">
-        import init, { WasmTariAddressGenerator } from './tari_address_generator.js';
+        import init, { WasmTariAddressGenerator, decode_tari_address } from './tari_address_generator.js';
 
         let generator = null;
         let currentPreview = null;
@@ -282,20 +282,12 @@
                 if (!generator) {
                     throw new Error('WASM module not initialized');
                 }
-                console.log('Decoding address:', address);
-                const parsed = generator.parse_address(address);
-                
+                const info = decode_tari_address(address);
                 const resultItem = document.createElement('div');
                 resultItem.className = 'result-item';
                 resultItem.innerHTML = `
                     <h3>Address: ${address}</h3>
-                    <div class="result-content">
-Base58: <span class="selectable">${parsed.to_base58()}</span>
-Emoji: <span class="selectable">${parsed.to_emoji()}</span>
-Network: <span class="selectable">${parsed.network()}</span>
-Has Payment ID: <span class="selectable">${parsed.has_payment_id()}</span>
-${parsed.has_payment_id() ? `Payment ID: <span class="selectable">${parsed.payment_id()}</span>` : ''}
-                    </div>
+                    <div class="result-content">${formatResult(info)}</div>
                 `;
 
                 if (isPermanent) {
@@ -324,6 +316,19 @@ ${parsed.has_payment_id() ? `Payment ID: <span class="selectable">${parsed.payme
             }
         }
 
+        function formatResult(info) {
+            return Object.entries(info)
+                .map(([key, value]) => {
+                    if (typeof value === 'object' && value !== null && key !== 'raw_bytes') {
+                        return `${key}:\n${Object.entries(value)
+                            .map(([k, v]) => `  ${k}: <span class="selectable">${v}</span>`)
+                            .join('\n')}`;
+                    }
+                    return `${key}: <span class="selectable">${value ?? ''}</span>`;
+                })
+                .join('\n');
+        }
+
         window.generateWallet = async function() {
             if (!generator) {
                 alert('WASM module not initialized');
@@ -343,9 +348,11 @@ ${parsed.has_payment_id() ? `Payment ID: <span class="selectable">${parsed.payme
                 }
 
                 let address = wallet.address_base58();
+                let emoji = wallet.address_emoji();
                 if (paymentId) {
                     const newAddress = wallet.new_address_with_payment_id(paymentId);
                     address = newAddress.to_base58();
+                    emoji = newAddress.to_emoji();
                 }
 
                 const resultItem = document.createElement('div');
@@ -354,8 +361,8 @@ ${parsed.has_payment_id() ? `Payment ID: <span class="selectable">${parsed.payme
                     <h3>Generated Wallet</h3>
                     <div class="result-content">
 Network: <span class="selectable">${wallet.network()}</span>
-Base58 Address: <span class="selectable">${wallet.address_base58()}</span>
-Emoji Address: <span class="selectable">${wallet.address_emoji()}</span>
+Base58 Address: <span class="selectable">${address}</span>
+Emoji Address: <span class="selectable">${emoji}</span>
 Seed Phrase: <span class="selectable">${wallet.seed_phrase()}</span>
 View Private Key: <span class="selectable">${wallet.view_private_key_hex()}</span>
 Spend Private Key: <span class="selectable">${wallet.spend_private_key_hex()}</span>
