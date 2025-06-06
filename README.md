@@ -2,6 +2,16 @@
 
 A powerful tool for generating and managing Tari wallet addresses with support for multiple networks and formats. This project provides both a command-line interface and a web interface for generating, decoding, and managing Tari addresses.
 
+## Demo
+
+[https://krakaw.github.io/wallet-decoder](https://krakaw.github.io/wallet-decoder)
+
+[https://krakaw.github.io/wallet-decoder?address=16Fkc9oBPMMFFHwFoGnFPsK5gWqtZUbtrg8hrHX7K32sy4J1kTbTsV3SuYDeCVJvMRb3Ko1yXu2zSHMpEV54XuKjnC5YA8rGEWDTNJ7jCdDENGifpoLnk](https://krakaw.github.io/wallet-decoder?address=16Fkc9oBPMMFFHwFoGnFPsK5gWqtZUbtrg8hrHX7K32sy4J1kTbTsV3SuYDeCVJvMRb3Ko1yXu2zSHMpEV54XuKjnC5YA8rGEWDTNJ7jCdDENGifpoLnk)
+
+
+[https://krakaw.github.io/wallet-decoder?tab=generate](https://krakaw.github.io/wallet-decoder?tab=generate)
+
+
 ## Features
 
 - Generate new Tari wallets

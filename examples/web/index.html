@@ -237,6 +237,10 @@
                         await decodeAndDisplayAddress(address, true);
                     }
                 }
+                const tab = urlParams.get('tab')?.toLowerCase()
+                if (tab && ['decode', 'generate'].includes(tab)) {
+                    switchTab(tab); 
+                }
             } catch (error) {
                 console.error('Failed to initialize WASM module:', error);
                 document.getElementById('decode-result').innerHTML = `

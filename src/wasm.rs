@@ -1,4 +1,4 @@
-use crate::{utils, AddressFeatures, Network, TariAddress, TariAddressGenerator, TariWallet};
+use crate::{utils, Network, TariAddress, TariAddressGenerator, TariWallet};
 use hex;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -53,6 +53,7 @@ pub struct WasmTariAddressGenerator {
 
 #[wasm_bindgen]
 impl WasmTariAddressGenerator {
+    #[allow(dead_code)]
     #[wasm_bindgen(constructor)]
     pub fn new() -> Result<WasmTariAddressGenerator, JsValue> {
         init();
@@ -131,6 +132,7 @@ pub struct WasmTariWallet {
 
 #[wasm_bindgen]
 impl WasmTariWallet {
+    #[allow(dead_code)]
     fn new(wallet: TariWallet) -> Self {
         Self { wallet }
     }
@@ -208,6 +210,7 @@ pub struct WasmTariAddress {
 
 #[wasm_bindgen]
 impl WasmTariAddress {
+    #[allow(dead_code)]
     fn new(address: TariAddress) -> Self {
         Self { address }
     }
