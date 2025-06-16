@@ -91,7 +91,6 @@ impl UtxoScanner {
         );
         let mut client = self.connect().await?;
 
-        let view_public_key = view_private_key.public_key();
 
         let request_payload = SearchUtxosRequest {
             commitments: vec![view_private_key.as_bytes().to_vec()],
@@ -112,6 +111,7 @@ impl UtxoScanner {
                     let block = block.block.unwrap();
                     let outputs = block.body.unwrap().outputs;
                     for output in outputs {
+                        println!("Output: {:#?}", output);
                         // Map TransactionOutput to Utxo
                         let utxo = Utxo {
                             output_hash: hex::encode(&output.hash),

@@ -10,8 +10,8 @@ use tari_address_generator::{
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Seed phrase for wallet restoration
-    #[arg(short, long)]
-    seed_phrase: String,
+    #[arg(short = 's', long)]
+    seed: String,
 
     /// Base node address (e.g., http://localhost:18142)
     #[arg(short, long, default_value = "http://localhost:18142")]
@@ -27,9 +27,8 @@ async fn main() -> Result<(), TariWalletError> {
 
     // When generating or restoring, provide the base_node_address
     let wallet = generator.restore_from_seed_phrase(
-        &args.seed_phrase,
+        &args.seed,
         Network::MainNet,
-        "".to_string()
     )?;
     let view_key_private = wallet.view_private_key();
 
