@@ -7,15 +7,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all("src/utxo/rpc_generated")?;
 
     let proto_files = &[
-        "proto/common.proto",
-        "proto/transaction.proto",
-        "proto/block.proto",
-        "proto/chain_metadata.proto",
-        "proto/proof_of_work.proto",
-        "proto/core_script.proto",
-        "proto/types.proto",
-        "proto/network.proto", // network.proto might be problematic if it defines services/rpcs not used
         "proto/base_node.proto",
+        "proto/block.proto",
+        "proto/network.proto",
+        "proto/p2pool.proto",
+        "proto/sidechain_types.proto",
+        "proto/transaction.proto",
+        "proto/types.proto",
+        "proto/validator_node.proto",
         "proto/wallet.proto",
     ];
     let proto_include_dirs = &["proto/"];

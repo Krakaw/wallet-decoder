@@ -597,3 +597,4 @@ message PaymentReferenceResponse {
     // Transaction output amount will be 0 for non set a
     uint64 min_value_promise = 9;
 }
+

@@ -3,6 +3,18 @@ use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use rand::RngCore;
 use zeroize::{Zeroize, ZeroizeOnDrop};
+use thiserror::Error;
+
+/// Error type for key-related operations
+#[derive(Debug, Error)]
+pub enum KeyError {
+    #[error("Invalid key length: expected {expected}, got {actual}")]
+    InvalidKeyLength { expected: usize, actual: usize },
+    #[error("Invalid key format: {0}")]
+    InvalidKeyFormat(String),
+    #[error("Key derivation error: {0}")]
+    KeyDerivationError(String),
+}
 
 /// A private key wrapper that securely handles scalar values
 #[derive(Clone, ZeroizeOnDrop)]

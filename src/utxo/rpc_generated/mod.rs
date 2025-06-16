@@ -11,3 +11,4 @@
 // }
 // We will inspect this file after the first successful build.
 // For now, it can be empty or contain a comment.
+pub mod tari_rpc;

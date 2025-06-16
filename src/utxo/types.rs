@@ -51,4 +51,7 @@ pub enum OutputType {
     // Potentially other types like `Stealth` for privacy-enhanced outputs,
     // or `Timelocked` for outputs that can only be spent after a certain time.
     // Add other output types as needed by the specific blockchain protocol.
+    Burn,
+    ValidatorNodeRegistration,
+    CodeTemplateRegistration,
 }

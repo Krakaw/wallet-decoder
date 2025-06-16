@@ -185,3 +185,4 @@ message UnblindedOutput {
     // The range proof
     RangeProof range_proof = 14;
 }
+

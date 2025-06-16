@@ -1,5 +1,5 @@
 use clap::Parser;
-use tari_address_generator::{network::Network, TariAddressGenerator};
+use tari_address_generator::{network::Network, wallet::TariWalletError, TariAddressGenerator};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -48,7 +48,7 @@ pub enum Command {
     },
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), TariWalletError> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -60,10 +60,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let network = Network::try_from(network)?;
             let wallet = TariAddressGenerator::with_passphrase(password);
 
-            let address = wallet.generate_new_wallet(network)?;
+            let address =
+                wallet.generate_new_wallet(network, "http://localhost:9998".to_string())?;
             match payment_id {
                 Some(payment_id) => {
-                    let address = address.create_integrated_address(payment_id.as_bytes().to_vec())?;
+                    let address =
+                        address.create_integrated_address(payment_id.as_bytes().to_vec())?;
                     println!("{:#?}", address);
                 }
                 None => {
@@ -90,10 +92,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let network = Network::try_from(network)?;
             let wallet = TariAddressGenerator::with_passphrase(password)
-                .restore_from_seed_phrase(&seed_phrase, network)?;
+                .restore_from_seed_phrase(&seed_phrase, network, "".to_string())
+                ?;
             match payment_id {
                 Some(payment_id) => {
-                    let address = wallet.create_integrated_address(payment_id.as_bytes().to_vec())?;
+                    let address =
+                        wallet.create_integrated_address(payment_id.as_bytes().to_vec())?;
                     println!("{:#?}", address);
                 }
                 None => {

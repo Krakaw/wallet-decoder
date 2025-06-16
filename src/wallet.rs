@@ -40,6 +40,9 @@ impl From<crate::keys::KeyError> for TariWalletError {
     }
 }
 
+
+
+
 /// A complete Tari wallet, encapsulating cryptographic keys, the wallet address,
 /// seed phrase, network information, and UTXO management capabilities.
 ///

@@ -139,3 +139,4 @@ message NewBlockTemplate {
     // In most cases the next call to get_new_block_template will return a block with the mempool in sync.
     bool is_mempool_in_sync = 3;
 }
+
