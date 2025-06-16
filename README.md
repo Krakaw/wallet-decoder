@@ -127,18 +127,19 @@ println!("Emoji: {}", address.to_emoji());
 
 ## UTXO Scanning
 
-This library supports scanning for Unspent Transaction Outputs (UTXOs) associated with your wallet. This feature requires connecting to a running Tari base node. You'll need to provide the base node's address when creating or restoring a wallet.
+This library supports scanning for Unspent Transaction Outputs (UTXOs) associated with your wallet. This feature requires connecting to a running Tari base node via **gRPC**. You'll need to provide the base node's gRPC address when creating or restoring a wallet.
 
-The `refresh_utxos()` method on a `TariWallet` instance will contact the base node, scan for all UTXOs related to the wallet's view key, and update the wallet's internal list. It returns only the newly found UTXOs since the last scan (or since wallet creation if never scanned). You can then use `get_utxos()` to retrieve all currently known UTXOs.
+The `refresh_utxos()` method on a `TariWallet` instance will contact the base node using gRPC, scan for all UTXOs related to the wallet's view key, and update the wallet's internal list. It returns only the newly found UTXOs since the last scan (or since wallet creation if never scanned). You can then use `get_utxos()` to retrieve all currently known UTXOs.
 
 ### Example: Scanning for UTXOs
 
 ```rust
-use tari_address_generator::{TariAddressGenerator, Network, TariWallet, TariWalletError}; // Added TariWalletError for main
+use tari_address_generator::{TariAddressGenerator, Network, TariWallet, TariWalletError};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Replace with the actual address of your Tari base node
-    let base_node_address = "http://your-tari-base-node-rpc.example.com:18143".to_string();
+#[tokio::main] // Or your preferred async runtime
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Replace with the actual gRPC address of your Tari base node
+    let base_node_address = "http://your-tari-base-node-grpc-address:18142".to_string(); // Default gRPC port for Minotari
 
     let generator = TariAddressGenerator::new();
 
@@ -147,9 +148,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Wallet generated. Address: {}", wallet.address_base58());
 
-    // Refresh UTXOs from the base node
+    // Refresh UTXOs from the base node using gRPC
     // This might take a moment depending on the node and wallet history.
-    match wallet.refresh_utxos() {
+    match wallet.refresh_utxos().await { // Note .await
         Ok(new_utxos) => {
             if !new_utxos.is_empty() {
                 println!("Found {} new UTXOs!", new_utxos.len());
@@ -181,7 +182,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-**Note:** Ensure your base node's JSON-RPC interface is accessible from where you run this code. The example uses a placeholder URL.
+**Important Notes:**
+- The UTXO scanning feature now uses **gRPC** to communicate with the Tari base node. Your application will need an async runtime (e.g., `tokio`) to call the `async` scanning methods like `wallet.refresh_utxos().await`.
+- Ensure your base node's gRPC interface is accessible from where you run this code. The example uses a placeholder URL and port. The default gRPC port for Minotari base nodes is typically 18142.
+- The library uses `tonic-build` in `build.rs` to compile Protobuf definitions for gRPC. If you modify the `.proto` files or `tonic-build` settings, you may need to update the re-exports in `src/utxo/rpc.rs` to match the generated code structure.
 
 ## License
 

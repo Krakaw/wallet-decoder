@@ -3,10 +3,11 @@ use crate::address::TariAddress;
 use crate::error::{TariError, Result as TariResult}; // Renamed Result to TariResult to avoid conflict
 use crate::keys::{KeyManager, PrivateKey, PublicKey};
 use crate::network::Network;
-use crate::utxo::scanner::UtxoScanner;
+// UtxoScanner is now imported directly in the refresh_utxos method or where needed
 use crate::utxo::types::Utxo;
-use crate::utxo::scanner::UtxoScannerError;
-use std::collections::HashSet; // Added for comparing UTXO sets
+use crate::utxo::scanner::UtxoScannerError; // Still needed for TariWalletError
+use crate::utxo::scanner::UtxoScanner; // Added for UtxoScanner::new
+use std::collections::HashSet;
 
 
 /// Custom error type for `TariWallet` operations, encompassing general Tari errors,
@@ -42,7 +43,8 @@ impl From<crate::keys::KeyError> for TariWalletError {
 /// A complete Tari wallet, encapsulating cryptographic keys, the wallet address,
 /// seed phrase, network information, and UTXO management capabilities.
 ///
-/// The wallet can connect to a Tari base node to scan for and manage its UTXOs.
+/// The wallet can connect to a Tari base node via gRPC to scan for and manage its UTXOs.
+/// It stores the base node's address and uses an on-demand `UtxoScanner` for these operations.
 #[derive(Clone)]
 pub struct TariWallet {
     network: Network,
@@ -52,40 +54,40 @@ pub struct TariWallet {
     spend_public_key: PublicKey,
     address: TariAddress,
     seed_phrase: String,
-    /// The scanner instance used to interact with a Tari base node for UTXO information.
-    utxo_scanner: UtxoScanner,
+    /// The network address (e.g., `127.0.0.1:18142`) of the Tari base node's gRPC interface.
+    /// This address is used by `refresh_utxos` to connect and scan for UTXOs.
+    base_node_address: String,
     /// A list of Unspent Transaction Outputs (UTXOs) currently known to be associated with this wallet.
-    /// This list is populated and updated by `refresh_utxos()`.
+    /// This list is populated by `refresh_utxos()` and represents the wallet's current view of its spendable funds.
     utxos: Vec<Utxo>,
+    // Removed: utxo_scanner: UtxoScanner,
 }
 
 impl TariWallet {
     /// Creates a new `TariWallet` instance.
     ///
-    /// This constructor initializes the wallet with the necessary cryptographic keys,
-    /// network information, seed phrase, and sets up a `UtxoScanner` for interacting
-    /// with a Tari base node.
-    ///
     /// # Arguments
     ///
-    /// * `network`: The Tari `Network` (e.g., MainNet, TestNet) this wallet operates on.
+    /// * `network`: The Tari `Network` this wallet operates on.
     /// * `view_private_key`: The wallet's private view key.
     /// * `spend_private_key`: The wallet's private spend key.
-    /// * `seed_phrase`: The BIP-39 mnemonic seed phrase associated with this wallet.
-    /// * `base_node_address`: The network address (URL) of the Tari base node's JSON-RPC interface
-    ///   (e.g., `http://127.0.0.1:18143`). This is required for UTXO scanning.
+    /// * `seed_phrase`: The BIP-39 mnemonic seed phrase.
+    /// * `base_node_address`: The network address (e.g., `http://127.0.0.1:18142`) of the Tari base node's gRPC interface.
+    ///   This address is stored and used by `refresh_utxos` for UTXO scanning.
     ///
     /// # Returns
     ///
-    /// * `Ok(Self)` if the wallet is successfully created and the `UtxoScanner` is initialized.
-    /// * `Err(TariWalletError)` if `UtxoScanner::new` fails (e.g., due to an invalid `base_node_address`).
+    /// * `Ok(Self)` if the wallet is successfully created.
+    /// * `Err(TariWalletError)` if `UtxoScanner::new` (called internally by `refresh_utxos`) were to fail,
+    ///   though `UtxoScanner::new` is currently simple and unlikely to error. The `Result` type is
+    ///   kept for future flexibility.
     pub fn new(
         network: Network,
         view_private_key: PrivateKey,
         spend_private_key: PrivateKey,
         seed_phrase: String,
         base_node_address: String,
-    ) -> Result<Self, TariWalletError> {
+    ) -> Result<Self, TariWalletError> { // UtxoScanner::new can still return Err, so keep Result
         let view_public_key = view_private_key.public_key();
         let spend_public_key = spend_private_key.public_key();
         
@@ -96,7 +98,8 @@ impl TariWallet {
             None,
         );
 
-        let utxo_scanner = UtxoScanner::new(base_node_address)?;
+        // UtxoScanner is no longer stored in Self.
+        // base_node_address is stored directly.
         let utxos = Vec::new();
 
         Ok(Self {
@@ -107,7 +110,7 @@ impl TariWallet {
             spend_public_key,
             address,
             seed_phrase,
-            utxo_scanner,
+            base_node_address, // Store the address
             utxos,
         })
     }
@@ -173,27 +176,33 @@ impl TariWallet {
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<Utxo>)` containing only the UTXOs that were newly found during this scan
-    ///   (i.e., UTXOs present in the scan result but not in `self.utxos` before the scan).
-    ///   Returns an empty vector if no new UTXOs were found.
-    /// * `Err(TariWalletError)` if an error occurs during the scanning process (e.g., network
-    ///   issues, node errors, deserialization problems). If an error occurs, `self.utxos`
-    ///   remains in the state it was before this call.
-    pub fn refresh_utxos(&mut self) -> Result<Vec<Utxo>, TariWalletError> {
-        println!("Refreshing UTXOs for wallet: {}", self.address_base58());
+    /// * `Ok(Vec<Utxo>)` containing only the UTXOs that were newly found during this scan.
+    /// * `Err(TariWalletError)` if an error occurs during the gRPC scanning process.
+    ///   If an error occurs, `self.utxos` (the wallet's list of known UTXOs) remains unchanged.
+    pub async fn refresh_utxos(&mut self) -> Result<Vec<Utxo>, TariWalletError> {
+        println!("Refreshing UTXOs for wallet: {} using node at {}", self.address_base58(), self.base_node_address);
+
+        // Create UtxoScanner instance on-the-fly for this scan operation.
+        let scanner = UtxoScanner::new(self.base_node_address.clone());
 
         let known_utxos_set: HashSet<Utxo> = self.utxos.iter().cloned().collect();
 
-        let all_fetched_utxos = self.utxo_scanner.scan_for_utxos(&self.view_private_key)?;
+        // Call the async scan_for_utxos method
+        let all_scanned_utxos = scanner
+            .scan_for_utxos(&self.view_private_key)
+            .await
+            .map_err(TariWalletError::Scanner)?; // Map UtxoScannerError to TariWalletError
 
-        self.utxos = all_fetched_utxos.clone();
+        // Update the wallet's list of UTXOs to the full list retrieved
+        self.utxos = all_scanned_utxos.clone();
 
         println!("Total UTXOs after scan: {}. Previously known: {}", self.utxos.len(), known_utxos_set.len());
 
+        // Determine newly found UTXOs
         let mut newly_found_utxos = Vec::new();
-        for utxo in &all_fetched_utxos {
-            if !known_utxos_set.contains(utxo) {
-                newly_found_utxos.push(utxo.clone());
+        for scanned_utxo in &all_scanned_utxos {
+            if !known_utxos_set.contains(scanned_utxo) {
+                newly_found_utxos.push(scanned_utxo.clone());
             }
         }
 
@@ -277,7 +286,8 @@ impl TariAddressGenerator {
     ///
     /// # Arguments
     /// * `network`: The Tari `Network` for the new wallet.
-    /// * `base_node_address`: The network address (URL) of the Tari base node for UTXO scanning.
+    /// * `base_node_address`: The network address (e.g., `http://127.0.0.1:18142`) of the Tari base node's gRPC interface,
+    ///   which will be stored in the `TariWallet` for UTXO scanning.
     ///
     /// # Returns
     /// A `Result` containing the new `TariWallet` or a `TariWalletError`.
@@ -302,7 +312,7 @@ impl TariAddressGenerator {
     /// # Arguments
     /// * `seed_phrase`: The mnemonic seed phrase.
     /// * `network`: The Tari `Network` for the wallet.
-    /// * `base_node_address`: The network address (URL) of the Tari base node for UTXO scanning.
+    /// * `base_node_address`: The network address of the Tari base node's gRPC interface for UTXO scanning.
     ///
     /// # Returns
     /// A `Result` containing the restored `TariWallet` or a `TariWalletError`.
@@ -326,7 +336,7 @@ impl TariAddressGenerator {
     /// # Arguments
     /// * `entropy`: A 16-byte slice representing the master key.
     /// * `network`: The Tari `Network` for the wallet.
-    /// * `base_node_address`: The network address (URL) of the Tari base node for UTXO scanning.
+    /// * `base_node_address`: The network address of the Tari base node's gRPC interface for UTXO scanning.
     ///
     /// # Returns
     /// A `Result` containing the restored `TariWallet` or a `TariWalletError`.
@@ -359,7 +369,8 @@ impl TariAddressGenerator {
     /// # Arguments
     /// * `network`: The Tari `Network` for all generated wallets.
     /// * `count`: The number of wallets to generate.
-    /// * `base_node_address`: The network address (URL) of the Tari base node, cloned for each wallet.
+    /// * `base_node_address`: The network address of the Tari base node's gRPC interface, which will be
+    ///   cloned and stored in each generated `TariWallet`.
     ///
     /// # Returns
     /// A `Result` containing a `Vec<TariWallet>` or a `TariWalletError`.
@@ -605,7 +616,8 @@ mod tests {
     }
 
     #[test]
-    fn test_refresh_utxos_logic() {
+    #[tokio::test] // Mark test as async
+    async fn test_refresh_utxos_logic() { // Make test function async
         let generator = TariAddressGenerator::new();
         let mut wallet = generator.generate_new_wallet(Network::MainNet, DUMMY_NODE_ADDRESS.to_string()).unwrap();
 
@@ -633,37 +645,30 @@ mod tests {
         // to return a predefined set of UTXOs, e.g., initial_utxo1 and a new_utxo3.
         // For now, we know this call will likely fail or return empty due to DUMMY_NODE_ADDRESS.
         // The test demonstrates the logic assuming the scanner could be controlled.
+        // Since the dummy UtxoScanner::scan_for_utxos now returns Ok(Vec::new()),
+        // we expect refresh_utxos to succeed, find 0 new UTXOs, and clear existing ones.
 
-        // If scan_for_utxos was mocked to return, say, [initial_utxo1, new_utxo3]:
-        // let new_utxo3 = Utxo {
-        //     output_hash: "hash3".to_string(),
-        //     value: 300,
-        //     block_height: 3,
-        //     script_pubkey: "script3".to_string(),
-        //     output_type: crate::utxo::types::OutputType::Standard,
-        // };
-        // MOCK_SCANNER.expect_scan_for_utxos()
-        // .returning(Ok(vec![initial_utxo1.clone(), new_utxo3.clone()]));
-
-        match wallet.refresh_utxos() {
+        match wallet.refresh_utxos().await { // Await the async call
             Ok(newly_found) => {
-                // This part of the test will only execute if the dummy node somehow responds successfully
-                // OR if scan_for_utxos is mocked in the future.
-                // Assuming the mock scenario above:
-                // assert_eq!(wallet.get_utxos().len(), 2); // Wallet now has initial_utxo1, new_utxo3
-                // assert!(wallet.get_utxos().contains(&initial_utxo1));
-                // assert!(wallet.get_utxos().contains(&new_utxo3));
-                // assert_eq!(newly_found.len(), 1); // Only new_utxo3 should be "newly_found"
-                // assert!(newly_found.contains(&new_utxo3));
-                println!("Successfully called refresh_utxos (unexpected with dummy node), newly found: {:?}", newly_found);
+                // The dummy scanner returns Ok(Vec::new()), so:
+                // 1. `all_scanned_utxos` will be empty.
+                // 2. `self.utxos` will be updated to this empty list.
+                // 3. `newly_found` will be empty.
+                assert_eq!(wallet.get_utxos().len(), 0, "After scan with empty result, wallet should have 0 UTXOs");
+                assert!(newly_found.is_empty(), "No new UTXOs should be found if scanner returns empty");
+                println!("Refresh UTXOs completed. Newly found: 0. Wallet UTXOs: 0.");
             }
-            Err(TariWalletError::Scanner(UtxoScannerError::Network(_))) |  Err(TariWalletError::Scanner(UtxoScannerError::ConnectionFailed(_))) => {
-                // This is the expected path with DUMMY_NODE_ADDRESS
-                println!("Refresh UTXOs failed due to network error as expected with dummy node.");
-                // In this case, self.utxos should remain unchanged from its state before the call
-                 assert_eq!(wallet.get_utxos().len(), 2); // Still contains initial_utxo1, initial_utxo2
+            // Remove specific error checks for Network/ConnectionFailed as ClientNotReady is more general now
+            // for the placeholder gRPC client. If the dummy client actually tried to connect and failed,
+            // it would be GrpcConnection.
+            Err(TariWalletError::Scanner(UtxoScannerError::GrpcConnection(s))) => {
+                 // This might happen if the dummy connect in rpc.rs fails for some reason
+                println!("Refresh UTXOs failed due to GrpcConnection (dummy client): {}", s);
+                assert_eq!(wallet.get_utxos().len(), 2); // State should be unchanged on error
             }
             Err(e) => {
+                // Other errors from scanner (like GrpcRequest, GrpcStream, MappingError)
+                // are less likely with the current dummy scanner but possible if it were more complex.
                 panic!("refresh_utxos failed with unexpected error: {:?}", e);
             }
         }

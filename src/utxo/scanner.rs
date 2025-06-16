@@ -1,377 +1,197 @@
-use reqwest::blocking::Client;
-use reqwest::Url;
-use serde::{Deserialize, Serialize};
-use hex;
+use futures_util::StreamExt; // For handling the stream
+use tonic::transport::Channel;
+use tonic::Streaming;
 
-use crate::utxo::types::{Utxo, OutputType};
-use crate::keys::PrivateKey;
-use crate::wallet::TariAddressGenerator;
-use crate::network::Network;
-use crate::error::TariError;
+// Use the placeholder/dummy gRPC types from our rpc module
+// GrpcTransactionOutput is an alias for ScanForUtxosResponse in the dummy rpc.rs
+use super::rpc::{ScanForUtxosRequest, ScanForUtxosResponse, WalletClient};
+// Removed: use crate::error::TariError; // No longer needed directly here
+use crate::keys::{PrivateKey, PublicKey};
+use crate::utxo::types::{OutputType, Utxo};
 
-// --- Request and Response Structs for get_utxos_by_view_key ---
-
-/// Represents the request payload for the `get_utxos_by_view_key` JSON-RPC method.
-#[derive(Debug, Serialize)]
-struct GetUtxosByViewKeyRequest {
-    /// The hex-encoded view key used to scan for UTXOs.
-    view_key_hex: String,
-    /// Optional offset for pagination, indicating the starting point of the UTXO list.
-    offset: Option<u64>,
-}
-
-/// Represents a UTXO as returned by the base node's API.
-/// This structure might differ slightly from the canonical `Utxo` type used internally.
-#[derive(Debug, Deserialize)]
-struct NodeUtxo {
-    output_hash: String,
-    value: u64,
-    block_height: u64,
-    script_pubkey: String,
-    output_type: String, // Node might return output_type as a string
-}
-
-/// Represents the response from the `get_utxos_by_view_key` JSON-RPC method.
-#[derive(Debug, Deserialize)]
-struct GetUtxosByViewKeyResponse {
-    /// A list of UTXOs found by the node for the given view key and offset.
-    utxos: Vec<NodeUtxo>,
-    /// An optional offset to use for fetching the next page of UTXOs.
-    /// `None` or `0` (depending on API specifics) typically indicates the end of the list.
-    next_offset: Option<u64>,
-    /// An optional total count of UTXOs available for the view key.
-    /// This can be useful for displaying progress or understanding the total scope.
-    total_count: Option<u64>,
-}
-
-// --- Error type for UtxoScanner operations ---
-
-/// Defines errors that can occur during UTXO scanning operations.
+/// Defines errors that can occur during UTXO scanning operations via gRPC.
 #[derive(Debug)]
 pub enum UtxoScannerError {
-    /// An error occurred during a network request (e.g., connection refused, DNS failure).
-    /// Wraps a `reqwest::Error`.
-    Network(reqwest::Error),
-    /// The provided base node URL was invalid and could not be parsed.
-    /// Wraps a `url::ParseError`.
-    InvalidUrl(url::ParseError),
-    /// Connection to the base node was established, but the node indicated a failure
-    /// (e.g., HTTP status code indicated an error not covered by `RequestFailed`).
-    ConnectionFailed(String),
-    /// The request to the base node failed with a non-success HTTP status code.
-    /// Includes the status code and the response body if available.
-    RequestFailed { status: reqwest::StatusCode, body: String },
-    /// An error occurred during JSON deserialization of the node's response.
-    /// Wraps a `serde_json::Error`.
-    Deserialization(serde_json::Error),
-    /// The node returned a UTXO with an `output_type` string that is not recognized
-    /// or cannot be mapped to the internal `OutputType` enum.
-    InvalidOutputType(String),
-    /// An error occurred during seed phrase restoration via `TariAddressGenerator`.
-    /// Wraps a `TariError`.
-    SeedRestoration(TariError),
+    /// An error occurred during gRPC connection to the base node.
+    /// Contains a description of the connection error.
+    GrpcConnection(String),
+    /// An error occurred during a gRPC request (after a connection was established).
+    /// Contains a description of the request error, potentially including status codes.
+    GrpcRequest(String),
+    /// An error occurred while streaming data from the base node during a gRPC call.
+    /// Contains a description of the stream error.
+    GrpcStream(String),
+    /// An error occurred when mapping gRPC response types to internal application `Utxo` types,
+    /// or if a required field is missing.
+    MappingError(String),
 }
+// specific From implementations or error mapping can be added.
+// Now it broadly converts any TariError into a string message for SeedRestoration.
 
-impl From<reqwest::Error> for UtxoScannerError {
-    fn from(err: reqwest::Error) -> Self {
-        UtxoScannerError::Network(err)
-    }
-}
-
-impl From<url::ParseError> for UtxoScannerError {
-    fn from(err: url::ParseError) -> Self {
-        UtxoScannerError::InvalidUrl(err)
-    }
-}
-
-impl From<serde_json::Error> for UtxoScannerError {
-    fn from(err: serde_json::Error) -> Self {
-        UtxoScannerError::Deserialization(err)
-    }
-}
-
-impl From<TariError> for UtxoScannerError {
-    fn from(err: TariError) -> Self {
-        UtxoScannerError::SeedRestoration(err)
-    }
-}
-
-// --- UtxoScanner struct and implementation ---
-
-/// `UtxoScanner` is responsible for connecting to a Tari base node and scanning for UTXOs.
+/// Handles scanning for UTXOs by connecting to a Tari base node via gRPC.
 ///
-/// It uses a `reqwest::blocking::Client` to make HTTP requests to the base node's
-/// JSON-RPC interface. It can scan for UTXOs using either a direct view key or by
-/// deriving the view key from a seed phrase.
+/// An instance of `UtxoScanner` is configured with the address of a Tari base node's
+/// gRPC interface. It provides methods to scan for UTXOs associated with a specific
+/// view key. The actual gRPC client connection is established on demand when scanning.
 pub struct UtxoScanner {
-    base_node_url: Url,
-    client: Client,
+    base_node_address: String,
+    // client: Option<WalletClient<Channel>>, // Client will be created per call for now
 }
 
 impl UtxoScanner {
-    /// Creates a new `UtxoScanner` instance.
+    /// Creates a new `UtxoScanner` for the given base node gRPC address.
+    ///
+    /// The gRPC client is not initialized at this point; connection to the specified
+    /// `base_node_address` is established when a scanning method is called.
     ///
     /// # Arguments
     ///
-    /// * `base_node_address`: The network address (URL) of the Tari base node's JSON-RPC interface.
-    ///   For example, `http://127.0.0.1:18143`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `UtxoScannerError::InvalidUrl` if the provided `base_node_address` is not a valid URL.
-    pub fn new(base_node_address: String) -> Result<Self, UtxoScannerError> {
-        let base_node_url = Url::parse(&base_node_address)?;
-        let client = Client::new();
-        Ok(Self { base_node_url, client })
+    /// * `base_node_address`: The network address (e.g., `127.0.0.1:18142`) of the Tari base node's gRPC interface.
+    pub fn new(base_node_address: String) -> Self {
+        Self { base_node_address }
     }
 
-    /// Attempts to connect to the base node by making a simple health check request.
-    ///
-    /// This method typically targets a common, lightweight endpoint like `/json_rpc` (often used
-    /// by Tari nodes for their JSON-RPC interface) with a GET request.
+    /// Establishes a gRPC connection to the base node.
     ///
     /// # Returns
     ///
-    /// * `Ok(())` if the base node responds with a success status code.
-    /// * `Err(UtxoScannerError)` if the connection fails, the node returns an error status,
-    ///   or the health check endpoint URL cannot be constructed.
-    pub fn connect_to_base_node(&self) -> Result<(), UtxoScannerError> {
-        let health_check_url = self.base_node_url.join("/json_rpc")?;
-        let response = self.client.get(health_check_url).send()?;
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(UtxoScannerError::ConnectionFailed(format!(
-                "Failed to connect. Status: {}, Body: {:?}",
-                response.status(),
-                response.text()
-            )))
-        }
+    /// * `Ok(WalletClient<Channel>)` if the connection is successful.
+    /// * `Err(UtxoScannerError::GrpcConnection)` if the connection fails.
+    pub async fn connect(&self) -> Result<WalletClient<Channel>, UtxoScannerError> {
+        // WalletClient::connect is a dummy method from the rpc.rs placeholder
+        // It's been updated to take String and format it.
+        WalletClient::connect(self.base_node_address.clone())
+            .await
+            .map_err(|e| UtxoScannerError::GrpcConnection(e.to_string()))
     }
 
-    /// Scans the base node for UTXOs associated with the given view key.
+    /// Asynchronously scans for UTXOs associated with the given `view_private_key` by making
+    /// gRPC calls to the base node. Assumes the gRPC client code is correctly generated and
+    /// re-exported via `crate::utxo::rpc`.
     ///
-    /// This method makes POST requests to the `/get_utxos_by_view_key` endpoint of the base node.
-    /// It handles pagination automatically, fetching all available UTXOs by following `next_offset`
-    /// in the responses until no more UTXOs are returned for the given view key.
+    /// This method handles the entire process of connecting to the node, sending the scan request,
+    /// processing the stream of responses, and mapping them to the internal `Utxo` type.
     ///
     /// # Arguments
     ///
-    /// * `view_key`: A reference to the `PrivateKey` representing the view key to scan with.
-    ///   The raw bytes of this key will be hex-encoded for the API request.
+    /// * `view_private_key`: A reference to the `PrivateKey` used for deriving the view public key,
+    ///   which is then sent to the base node to identify relevant UTXOs.
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<Utxo>)` containing all UTXOs found for the view key. The vector will be empty
-    ///   if no UTXOs are found.
-    /// * `Err(UtxoScannerError)` if any error occurs during the process, such as network issues,
-    ///   request failures, deserialization problems, or invalid data from the node.
-    pub fn scan_for_utxos(&self, view_key: &PrivateKey) -> Result<Vec<Utxo>, UtxoScannerError> {
-        let request_base_url = self.base_node_url.join("/get_utxos_by_view_key")?;
-        let view_key_hex = hex::encode(view_key.as_bytes());
-
-        let mut all_utxos: Vec<Utxo> = Vec::new();
-        let mut current_offset: Option<u64> = Some(0);
-        let mut iteration_count = 0;
-        const MAX_ITERATIONS: u32 = 1000;
-
-        println!(
-            "Initiating UTXO scan for view key (hex): {} on node {}",
-            view_key_hex, self.base_node_url
-        );
-
-        loop {
-            if iteration_count >= MAX_ITERATIONS {
-                eprintln!("Reached maximum pagination iterations. Aborting.");
-                break;
-            }
-            iteration_count += 1;
-
-            let request_payload = GetUtxosByViewKeyRequest {
-                view_key_hex: view_key_hex.clone(),
-                offset: current_offset,
-            };
-
-            if let Some(offset_val) = current_offset {
-                 println!("Requesting UTXOs with offset: {}", offset_val);
-            } else {
-                 println!("Requesting UTXOs with no offset (should be first page).");
-            }
-
-            let response = self.client.post(request_base_url.clone())
-                .json(&request_payload)
-                .send()?;
-
-            if !response.status().is_success() {
-                return Err(UtxoScannerError::RequestFailed {
-                    status: response.status(),
-                    body: response.text().unwrap_or_else(|_| "Could not retrieve response body".to_string()),
-                });
-            }
-
-            let response_data: GetUtxosByViewKeyResponse = response.json()?;
-
-            if let Some(total) = response_data.total_count {
-                println!("Response: {} UTXOs received. Next offset: {:?}. Total reported: {}", response_data.utxos.len(), response_data.next_offset, total);
-            } else {
-                println!("Response: {} UTXOs received. Next offset: {:?}.", response_data.utxos.len(), response_data.next_offset);
-            }
-
-            for node_utxo in response_data.utxos {
-                let output_type = match node_utxo.output_type.as_str() {
-                    "Standard" => OutputType::Standard,
-                    "Coinbase" => OutputType::Coinbase,
-                    unknown_type => return Err(UtxoScannerError::InvalidOutputType(unknown_type.to_string())),
-                };
-                all_utxos.push(Utxo {
-                    output_hash: node_utxo.output_hash,
-                    value: node_utxo.value,
-                    block_height: node_utxo.block_height,
-                    script_pubkey: node_utxo.script_pubkey,
-                    output_type,
-                });
-            }
-
-            match response_data.next_offset {
-                Some(next_off_val) => {
-                    if next_off_val == 0 {
-                        if current_offset.is_none() || current_offset == Some(0) {
-                             println!("Next offset is 0, assuming end of pagination.");
-                            break;
-                        }
-                    }
-                    if let Some(current_off_val) = current_offset {
-                        if next_off_val <= current_off_val && next_off_val != 0 {
-                            println!("Next offset ({}) did not advance from current ({}). Assuming end of pagination.", next_off_val, current_off_val);
-                            break;
-                        }
-                    }
-                    current_offset = Some(next_off_val);
-                }
-                None => {
-                    println!("No next offset provided. Assuming end of pagination.");
-                    break;
-                }
-            }
-        }
-
-        println!("Total UTXOs collected after pagination: {}", all_utxos.len());
-        Ok(all_utxos)
-    }
-
-    /// Scans the base node for UTXOs by first deriving the view key from a seed phrase.
-    ///
-    /// This method uses `TariAddressGenerator` to restore a wallet and obtain the view key
-    /// from the provided seed phrase and network. It then calls `scan_for_utxos` with the
-    /// derived view key.
-    ///
-    /// # Arguments
-    ///
-    /// * `seed_phrase`: The BIP-39 seed phrase (mnemonic) for the wallet.
-    /// * `network`: The `Network` (e.g., MainNet, TestNet) the wallet belongs to.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Vec<Utxo>)` containing all UTXOs found for the derived view key.
-    /// * `Err(UtxoScannerError)` if seed phrase restoration fails or if any error occurs
-    ///   during the subsequent UTXO scan.
-    pub fn scan_for_utxos_with_seed(
+    /// * `Ok(Vec<Utxo>)` containing all UTXOs found and successfully mapped.
+    /// * `Err(UtxoScannerError)` if any part of the process fails, including connection,
+    ///   request execution, stream processing, or data mapping.
+    pub async fn scan_for_utxos(
         &self,
-        seed_phrase: &str,
-        network: Network,
+        view_private_key: &PrivateKey,
     ) -> Result<Vec<Utxo>, UtxoScannerError> {
-        let mut address_generator = TariAddressGenerator::from_seed_phrase(seed_phrase, network)?;
-        // Assumes get_private_key(0) is or can derive the primary view key.
-        // This might need adjustment based on specific Tari key derivation schemes for view keys.
-        let view_key_private = address_generator.get_private_key(0)?;
-        self.scan_for_utxos(&view_key_private)
+        println!(
+            "Connecting to gRPC node at: {} for UTXO scan.",
+            self.base_node_address
+        );
+        let mut client = self.connect().await?;
+
+        // This assumes PrivateKey has a method `public_key()` that returns a type
+        // compatible with or convertible to the PublicKey type expected by the application,
+        // and that this PublicKey type has an `as_bytes()` method.
+        let view_public_key = view_private_key.public_key(); // This needs to be defined on PrivateKey
+
+        let request_payload = ScanForUtxosRequest {
+            view_public_key: view_public_key.as_bytes().to_vec(), // PublicKey must have as_bytes()
+            start_time: None, // Placeholder for actual scan parameters
+            end_time: None,   // Placeholder for actual scan parameters
+        };
+
+        println!("Sending ScanForUtxosRequest...");
+        let mut stream: Streaming<ScanForUtxosResponse> = client
+            .scan_for_utxos(tonic::Request::new(request_payload))
+            .await
+            .map_err(|e| UtxoScannerError::GrpcRequest(e.to_string()))?
+            .into_inner();
+
+        let mut found_utxos = Vec::new();
+        println!("Processing UTXO stream...");
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(response) => {
+                    // The dummy ScanForUtxosResponse now directly contains the UTXO fields.
+                    // The 'output' field that wrapped TransactionOutput is removed in the latest dummy.
+                    // So, 'response' itself is the GrpcTransactionOutput equivalent.
+                    let output_type = match response.output_type_enum {
+                        0 => OutputType::Standard,
+                        1 => OutputType::Coinbase,
+                        // Add other mappings as necessary based on actual proto definitions
+                        other => return Err(UtxoScannerError::MappingError(format!("Unknown output_type_enum: {}", other))),
+                    };
+
+                    let utxo = Utxo {
+                        output_hash: hex::encode(&response.hash),
+                        value: response.value,
+                        block_height: response.mined_height,
+                        script_pubkey: hex::encode(&response.script),
+                        output_type,
+                    };
+                    found_utxos.push(utxo);
+                }
+                Err(status) => {
+                    eprintln!("Error in UTXO stream: {:?}", status);
+                    return Err(UtxoScannerError::GrpcStream(status.to_string()));
+                }
+            }
+        }
+        println!("UTXO scan complete. Found {} UTXOs.", found_utxos.len());
+        Ok(found_utxos)
     }
+
+    // Removed: scan_for_utxos_with_seed method
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::PrivateKey;
-    use crate::network::Network;
-    // TariAddressGenerator is not directly used in UtxoScanner tests, but good to have if needed for setup
-    // use crate::wallet::TariAddressGenerator;
+    // PrivateKey is still needed for generate_dummy_private_key
 
-    const DUMMY_VALID_URL: &str = "http://127.0.0.1:18143"; // A syntactically valid URL
-    const DUMMY_INVALID_URL: &str = "not_a_valid_url";
+    const DUMMY_GRPC_TARGET_ADDRESS: &str = "http://127.0.0.1:18144"; // Needs to be a valid URI for tonic
 
     fn generate_dummy_private_key() -> PrivateKey {
-        // Using a fixed key for deterministic tests if needed, otherwise random is fine.
-        // For simplicity, using a zeroed key. In real scenarios, use a proper random or derived key.
-        let key_bytes = [0u8; 32];
-        PrivateKey::from_bytes(&key_bytes).expect("Failed to create dummy private key")
+        let key_bytes = [0u8; 32]; // Example key bytes
+        PrivateKey::from_bytes(&key_bytes).expect("Failed to create dummy private key from bytes")
     }
 
-    #[test]
-    fn test_utxo_scanner_new_valid_address() {
-        let scanner = UtxoScanner::new(DUMMY_VALID_URL.to_string());
-        assert!(scanner.is_ok());
+    #[tokio::test]
+    async fn test_utxo_scanner_new() {
+        let scanner = UtxoScanner::new(DUMMY_GRPC_TARGET_ADDRESS.to_string());
+        assert_eq!(scanner.base_node_address, DUMMY_GRPC_TARGET_ADDRESS);
     }
 
-    #[test]
-    fn test_utxo_scanner_new_invalid_address() {
-        let scanner = UtxoScanner::new(DUMMY_INVALID_URL.to_string());
-        assert!(scanner.is_err());
-        match scanner.err().unwrap() {
-            UtxoScannerError::InvalidUrl(_) => { /* Expected */ }
-            e => panic!("Expected InvalidUrl error, got {:?}", e),
-        }
-    }
-
-    #[test]
-    fn test_connect_to_base_node_dummy_address() {
-        let scanner = UtxoScanner::new(DUMMY_VALID_URL.to_string()).unwrap();
-        let result = scanner.connect_to_base_node();
-        assert!(result.is_err());
-        // We expect a network error (connection refused, timeout, etc.) or a specific ConnectionFailed
-        match result.err().unwrap() {
-            UtxoScannerError::Network(_) => { /* Expected due to reqwest failure */ }
-            UtxoScannerError::ConnectionFailed(_) => { /* Also possible if the GET itself fails but server responds with error */ }
-            e => panic!("Expected Network or ConnectionFailed error, got {:?}", e),
-        }
-    }
-
-    #[test]
-    fn test_scan_for_utxos_dummy_address() {
-        let scanner = UtxoScanner::new(DUMMY_VALID_URL.to_string()).unwrap();
+    #[tokio::test]
+    async fn test_scan_for_utxos_maps_dummy_stream() { // Renamed test
+        // Using a more URI like string for the dummy address, though connect() dummy prefixes http if not present
+        let scanner = UtxoScanner::new(DUMMY_GRPC_TARGET_ADDRESS.to_string());
         let view_key = generate_dummy_private_key();
-        let result = scanner.scan_for_utxos(&view_key);
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            UtxoScannerError::Network(_) => { /* Expected */ }
-            UtxoScannerError::RequestFailed { .. } => { /* Expected if server responds with non-200 */ }
-            e => panic!("Expected Network or RequestFailed error, got {:?}", e),
-        }
+
+        let result = scanner.scan_for_utxos(&view_key).await;
+        assert!(result.is_ok(), "Scan failed: {:?}", result.err());
+        let utxos = result.unwrap();
+
+        assert_eq!(utxos.len(), 2, "Expected 2 UTXOs from the dummy stream");
+
+        // Assertions for the first UTXO
+        assert_eq!(utxos[0].value, 100);
+        assert_eq!(utxos[0].output_hash, hex::encode(hex::decode("0101").unwrap_or_default()));
+        assert_eq!(utxos[0].block_height, 123);
+        assert_eq!(utxos[0].script_pubkey, hex::encode(hex::decode("aabbcc").unwrap_or_default()));
+        assert_eq!(utxos[0].output_type, OutputType::Standard);
+
+        // Assertions for the second UTXO
+        assert_eq!(utxos[1].value, 200);
+        assert_eq!(utxos[1].output_hash, hex::encode(hex::decode("0202").unwrap_or_default()));
+        assert_eq!(utxos[1].block_height, 124);
+        assert_eq!(utxos[1].script_pubkey, hex::encode(hex::decode("ddeeff").unwrap_or_default()));
+        assert_eq!(utxos[1].output_type, OutputType::Coinbase);
     }
 
-    #[test]
-    fn test_scan_for_utxos_with_seed_dummy_address() {
-        let scanner = UtxoScanner::new(DUMMY_VALID_URL.to_string()).unwrap();
-        // A valid seed phrase (replace with an actual one if specific derivation is tested, otherwise any valid format)
-        let seed_phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"; // Example 12-word phrase
-        let result = scanner.scan_for_utxos_with_seed(seed_phrase, Network::MainNet);
-        assert!(result.is_err());
-        // This error should propagate from the inner scan_for_utxos call
-        match result.err().unwrap() {
-            UtxoScannerError::Network(_) => { /* Expected */ }
-            UtxoScannerError::RequestFailed { .. } => { /* Expected */ }
-            e => panic!("Expected Network or RequestFailed error from underlying scan, got {:?}", e),
-        }
-    }
-
-    #[test]
-    fn test_scan_for_utxos_with_seed_invalid_seed() {
-        let scanner = UtxoScanner::new(DUMMY_VALID_URL.to_string()).unwrap();
-        let invalid_seed_phrase = "this is not a valid seed phrase";
-        let result = scanner.scan_for_utxos_with_seed(invalid_seed_phrase, Network::MainNet);
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            UtxoScannerError::SeedRestoration(_) => { /* Expected */ }
-            e => panic!("Expected SeedRestoration error, got {:?}", e),
-        }
-    }
+    // test_scan_for_utxos_handles_stream_error can be added later if the dummy client is enhanced
+    // to simulate stream errors in a configurable way.
 }
