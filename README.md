@@ -125,6 +125,64 @@ println!("Base58: {}", address.to_base58());
 println!("Emoji: {}", address.to_emoji());
 ```
 
+## UTXO Scanning
+
+This library supports scanning for Unspent Transaction Outputs (UTXOs) associated with your wallet. This feature requires connecting to a running Tari base node. You'll need to provide the base node's address when creating or restoring a wallet.
+
+The `refresh_utxos()` method on a `TariWallet` instance will contact the base node, scan for all UTXOs related to the wallet's view key, and update the wallet's internal list. It returns only the newly found UTXOs since the last scan (or since wallet creation if never scanned). You can then use `get_utxos()` to retrieve all currently known UTXOs.
+
+### Example: Scanning for UTXOs
+
+```rust
+use tari_address_generator::{TariAddressGenerator, Network, TariWallet, TariWalletError}; // Added TariWalletError for main
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Replace with the actual address of your Tari base node
+    let base_node_address = "http://your-tari-base-node-rpc.example.com:18143".to_string();
+
+    let generator = TariAddressGenerator::new();
+
+    // When generating or restoring, provide the base_node_address
+    let mut wallet = generator.generate_new_wallet(Network::MainNet, base_node_address)?;
+
+    println!("Wallet generated. Address: {}", wallet.address_base58());
+
+    // Refresh UTXOs from the base node
+    // This might take a moment depending on the node and wallet history.
+    match wallet.refresh_utxos() {
+        Ok(new_utxos) => {
+            if !new_utxos.is_empty() {
+                println!("Found {} new UTXOs!", new_utxos.len());
+                for utxo in &new_utxos {
+                    println!("  - New UTXO: Value: {}, Height: {}, Type: {:?}", utxo.value, utxo.block_height, utxo.output_type);
+                }
+            } else {
+                println!("No new UTXOs found during this refresh.");
+            }
+        }
+        Err(e) => {
+            eprintln!("Error refreshing UTXOs: {:?}", e);
+            // Depending on the error, you might want to retry or inform the user.
+        }
+    }
+
+    // Get all currently known UTXOs stored in the wallet
+    let all_utxos = wallet.get_utxos();
+    if all_utxos.is_empty() {
+        println!("No UTXOs known for this wallet yet.");
+    } else {
+        println!("Total known UTXOs: {}", all_utxos.len());
+        for utxo in all_utxos {
+            println!("- UTXO: Value: {}, Hash: {}, Height: {}, Type: {:?}",
+                     utxo.value, utxo.output_hash, utxo.block_height, utxo.output_type);
+        }
+    }
+    Ok(())
+}
+```
+
+**Note:** Ensure your base node's JSON-RPC interface is accessible from where you run this code. The example uses a placeholder URL.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

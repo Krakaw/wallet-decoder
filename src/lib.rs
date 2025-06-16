@@ -28,6 +28,7 @@ pub mod emoji;
 pub mod error;
 pub mod keys;
 pub mod network;
+pub mod utxo;
 pub mod wallet;
 pub mod wordlist;
 pub mod utils;
