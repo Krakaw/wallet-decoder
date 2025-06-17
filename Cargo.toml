@@ -9,8 +9,9 @@ repository = "https://github.com/krakaw/wallet-decoder"
 
 
 [dependencies]
-curve25519-dalek = {version = "4.1", features = ["group", "digest"]}
+curve25519-dalek = {version = "4.1", features = ["group", "digest", "serde"]}
 blake2 = "0.10"
+sha2 = "0.10"
 tonic = "0.11"
 prost = "0.12"
 futures-util = "0.3" # Added
