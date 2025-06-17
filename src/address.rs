@@ -103,7 +103,7 @@ impl Default for AddressFeatures {
 pub struct TariAddress {
     network: Network,
     features: AddressFeatures,
-    view_key: PublicKey,
+    view_key: Option<PublicKey>,
     spend_key: PublicKey,
     payment_id: Option<Vec<u8>>,
 }
@@ -112,7 +112,7 @@ impl TariAddress {
     /// Create a new Tari address
     pub fn new(
         network: Network,
-        view_key: PublicKey,
+        view_key: Option<PublicKey>,
         spend_key: PublicKey,
         payment_id: Option<Vec<u8>>,
     ) -> Self {
@@ -135,7 +135,7 @@ impl TariAddress {
     pub fn from_components(
         network: Network,
         features: AddressFeatures,
-        view_key: PublicKey,
+        view_key: Option<PublicKey>,
         spend_key: PublicKey,
         payment_id: Option<Vec<u8>>,
     ) -> Self {
@@ -159,8 +159,8 @@ impl TariAddress {
     }
 
     /// Get the view key
-    pub fn view_key(&self) -> &PublicKey {
-        &self.view_key
+    pub fn view_key(&self) -> Option<&PublicKey> {
+        self.view_key.as_ref()
     }
 
     /// Get the spend key
@@ -180,14 +180,41 @@ impl TariAddress {
             .map(|pid| utils::bytes_to_ascii_string(pid))
     }
 
+    /// Get the address type
+    pub fn address_type(&self) -> String {
+        if self.view_key().is_some() {
+            "Dual Address".to_string()
+        } else {
+            "Single Address".to_string()
+        }
+    }
+
+    /// Convert to bytes for a single address
+    pub fn to_bytes_single(&self) -> Vec<u8> {
+        let mut buf = vec![0; TARI_ADDRESS_INTERNAL_SINGLE_SIZE];
+        buf[0] = self.network.as_byte();
+        buf[1] = self.features.as_byte();
+        buf[2..34].copy_from_slice(&self.spend_key.as_bytes());
+        let checksum = compute_checksum(&buf[0..(TARI_ADDRESS_INTERNAL_SINGLE_SIZE - 1)]);
+        buf[TARI_ADDRESS_INTERNAL_SINGLE_SIZE - 1] = checksum;
+        buf
+    }
+
     /// Convert to raw bytes (without checksum)
     pub fn to_bytes(&self) -> Vec<u8> {
+        // Check if the address is a single address
+        if self.view_key().is_none() {
+            return self.to_bytes_single();
+        }
+
         let payment_id_len = self.payment_id.as_ref().map_or(0, |pid| pid.len());
         let length = TARI_ADDRESS_INTERNAL_DUAL_SIZE + payment_id_len; // 67 for network, features, view key, spend key + payment_id
         let mut buf = vec![0; length];
         buf[0] = self.network.as_byte();
         buf[1] = self.features.as_byte();
-        buf[2..34].copy_from_slice(&self.view_key.as_bytes());
+        if let Some(view_key) = &self.view_key {
+            buf[2..34].copy_from_slice(&view_key.as_bytes());
+        }
         buf[34..66].copy_from_slice(&self.spend_key.as_bytes());
         if let Some(payment_id) = &self.payment_id {
             buf[66..(length - 1)].copy_from_slice(payment_id);
@@ -287,20 +314,24 @@ impl TariAddress {
         }
 
         if bytes.len() == TARI_ADDRESS_INTERNAL_SINGLE_SIZE {
+            println!("Single address");
             // Handle single address (without payment ID)
             let network = Network::from_byte(bytes[0])?;
             let features = AddressFeatures::from_byte(bytes[1]);
-            let view_key = PublicKey::from_bytes(&bytes[2..34])?;
-            let spend_key = PublicKey::from_bytes(&bytes[34..66])?;
+            let spend_key = PublicKey::from_bytes(&bytes[2..34])?;
 
             Ok(Self::from_components(
-                network, features, view_key, spend_key, None,
+                network, features, None, spend_key, None,
             ))
         } else {
             // Handle dual address (with payment ID)
             let network = Network::from_byte(bytes[0])?;
             let features = AddressFeatures::from_byte(bytes[1]);
-            let view_key = PublicKey::from_bytes(&bytes[2..34])?;
+            let view_key = if bytes.len() > TARI_ADDRESS_INTERNAL_SINGLE_SIZE {
+                Some(PublicKey::from_bytes(&bytes[2..34])?)
+            } else {
+                None
+            };
             let spend_key = PublicKey::from_bytes(&bytes[34..66])?;
 
             let payment_id = if bytes.len() > TARI_ADDRESS_INTERNAL_DUAL_SIZE {
@@ -331,7 +362,7 @@ impl TariAddress {
 
         Ok(Self::new(
             self.network,
-            self.view_key.clone(),
+            self.view_key.clone()   ,
             self.spend_key.clone(),
             Some(payment_id),
         ))
@@ -353,7 +384,7 @@ impl std::fmt::Debug for TariAddress {
         f.debug_struct("TariAddress")
             .field("network", &self.network())
             .field("features", &self.features())
-            .field("view_key", &self.view_key().to_hex())
+            .field("view_key", &self.view_key().map(|key| key.to_hex()))
             .field("spend_key", &self.spend_key().to_hex())
             .field("payment_id", &self.payment_id().map(|id| hex::encode(id)))
             .field("base58", &self.to_base58())
@@ -382,10 +413,19 @@ mod tests {
     #[test]
     fn test_address_creation() {
         let (view_key, spend_key) = create_test_keys();
-        let address = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let address = TariAddress::new(Network::MainNet, Some(view_key), spend_key, None);
 
         assert_eq!(address.network(), Network::MainNet);
         assert_eq!(address.features(), AddressFeatures::ONE_SIDED);
+        assert!(address.payment_id().is_none());
+    }
+
+    #[test]
+    fn test_single_address() {
+        let address = TariAddress::from_hex("00016c1b073261df680b5a95dbc8c559ed1eec8d31f66c90e9e2843d3376cb61425112").unwrap();
+        assert_eq!(address.network(), Network::MainNet);
+        assert_eq!(address.features(), AddressFeatures::ONE_SIDED);
+        assert_eq!(address.spend_key().to_hex(), "6c1b073261df680b5a95dbc8c559ed1eec8d31f66c90e9e2843d3376cb614251");
         assert!(address.payment_id().is_none());
     }
 
@@ -395,7 +435,7 @@ mod tests {
         let payment_id = b"test_payment_id".to_vec();
         let address = TariAddress::new(
             Network::MainNet,
-            view_key,
+            Some(view_key),
             spend_key,
             Some(payment_id.clone()),
         );
@@ -412,7 +452,7 @@ mod tests {
     #[test]
     fn test_address_encoding() {
         let (view_key, spend_key) = create_test_keys();
-        let address = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let address = TariAddress::new(Network::MainNet, Some(view_key), spend_key, None);
 
         let base58 = address.to_base58();
         let emoji = address.to_emoji();
@@ -425,7 +465,7 @@ mod tests {
     #[test]
     fn test_address_roundtrip() {
         let (view_key, spend_key) = create_test_keys();
-        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let original = TariAddress::new(Network::MainNet, Some(view_key), spend_key, None);
 
         let bytes = original.to_bytes_with_checksum();
         let recovered = TariAddress::from_bytes_with_checksum(&bytes).unwrap();
@@ -437,7 +477,7 @@ mod tests {
     fn test_address_from_emoji() {
         let (view_key, spend_key) = create_test_keys();
         // let original = TariAddress::new(Network::MainNet, view_key, spend_key, None).with_payment_id(vec![1, 2, 3, 4, 5]).unwrap();
-        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let original = TariAddress::new(Network::MainNet, Some(view_key), spend_key, None);
         let emoji = original.to_emoji();
         let recovered = TariAddress::from_emoji(&emoji).unwrap();
         assert_eq!(original, recovered);
@@ -446,7 +486,7 @@ mod tests {
     #[test]
     fn test_address_from_base58() {
         let (view_key, spend_key) = create_test_keys();
-        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let original = TariAddress::new(Network::MainNet, Some(view_key), spend_key, None);
         let base58 = original.to_base58();
         let recovered = TariAddress::from_base58(&base58).unwrap();
         assert_eq!(original, recovered);
@@ -455,7 +495,7 @@ mod tests {
     #[test]
     fn test_address_from_hex() {
         let (view_key, spend_key) = create_test_keys();
-        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None);
+        let original = TariAddress::new(Network::MainNet, Some(view_key), spend_key, None);
         let bytes = original.to_bytes_with_checksum();
         let hex = hex::encode(bytes);
         let recovered = TariAddress::from_hex(&hex).unwrap();
@@ -467,7 +507,7 @@ mod tests {
     #[test]
     fn test_address_from_emoji_with_payment_id() {
         let (view_key, spend_key) = create_test_keys();
-        let original = TariAddress::new(Network::MainNet, view_key, spend_key, None)
+        let original = TariAddress::new(Network::MainNet, Some(view_key)   , spend_key, None)
             .with_payment_id(vec![1, 2, 3, 4, 5])
             .unwrap();
         let emoji = original.to_emoji();

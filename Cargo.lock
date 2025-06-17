@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-decoder"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "argon2",
  "bip39",

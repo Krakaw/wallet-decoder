@@ -275,8 +275,8 @@ pub fn decode_tari_address(address_str: &str) -> Result<JsValue, JsError> {
         network_byte: address.network().as_byte(),
         features: features_info,
         public_spend_key: hex::encode(address.spend_key().as_bytes()),
-        public_view_key: hex::encode(address.view_key().as_bytes()),
-        address_type: "Dual Address".to_string(), // Only Dual Addresses are supported at the moment
+        public_view_key: address.view_key().map(|key| hex::encode(key.as_bytes())).unwrap_or_default(),
+        address_type: address.address_type(),
         payment_id: address.payment_id().map(|pid| hex::encode(pid)),
         payment_id_ascii: address
             .payment_id()

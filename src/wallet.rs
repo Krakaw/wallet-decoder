@@ -30,7 +30,7 @@ impl TariWallet {
         
         let address = TariAddress::new(
             network,
-            view_public_key.clone(),
+            Some(view_public_key.clone()),
             spend_public_key.clone(),
             None,
         );
