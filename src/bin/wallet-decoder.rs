@@ -61,7 +61,7 @@ fn main() -> Result<(), TariWalletError> {
             let wallet = TariAddressGenerator::with_passphrase(password);
 
             let address =
-                wallet.generate_new_wallet(network, "http://localhost:9998".to_string())?;
+                wallet.generate_new_wallet(network)?;
             match payment_id {
                 Some(payment_id) => {
                     let address =
@@ -92,8 +92,8 @@ fn main() -> Result<(), TariWalletError> {
         } => {
             let network = Network::try_from(network)?;
             let wallet = TariAddressGenerator::with_passphrase(password)
-                .restore_from_seed_phrase(&seed_phrase, network, "".to_string())
-                ?;
+                .restore_from_seed_phrase(&seed_phrase, network)?
+                ;
             match payment_id {
                 Some(payment_id) => {
                     let address =
