@@ -165,40 +165,101 @@ impl UtxoScanner {
         key
     }
 
-    /// Verify the range proof for an output
-    fn verify_range_proof(
-        commitment: &[u8],
-        spending_key: &PrivateKey,
-        amount: u64,
-        range_proof: &RangeProof,
-    ) -> Result<bool, UtxoScannerError> {
-        // Convert commitment bytes to RistrettoPoint
-        let commitment_point = RistrettoPoint::hash_from_bytes::<Blake2b<U64>>(commitment);
+use crate::range_proof::{self as MyRangeProofModule, RangeProofError}; // Import our range proof module
+use crate::tari_types; // Import the new types
 
-        // Create a Pedersen commitment from the amount and spending key
-        let amount_scalar = Scalar::from(amount);
-        let commitment = RistrettoPoint::mul_base(&amount_scalar)
-            + RistrettoPoint::mul_base(&spending_key.as_scalar());
+/// Verify the range proof for an output
+fn verify_range_proof(
+    commitment_bytes: &[u8],
+    range_proof_bytes: Option<&[u8]>,
+    output_features: &tari_types::OutputFeatures,
+    // Fields from gRPC ComSignature, matching assumed ComAndPubSignature::from_rpc_bytes
+    rpc_comsig_commitment_bytes: &[u8],
+    rpc_comsig_public_nonce_bytes: &[u8],
+    rpc_comsig_u_a_bytes: &[u8],
+    rpc_comsig_u_x_bytes: &[u8], // u_x is part of ComAndPubSignature, though not used in u_a check
+    script_bytes: &[u8],
+    sender_offset_public_key_bytes: &[u8],
+    covenant_bytes: &[u8],
+    encrypted_data_bytes: &[u8],
+    minimum_value_promise: u64,
+    output_version_u32: u32,
+) -> Result<(), UtxoScannerError> {
+    let commitment_point = RistrettoPoint::from_uniform_bytes(
+        commitment_bytes.try_into().map_err(|_| {
+            UtxoScannerError::MappingError("Invalid commitment byte length".to_string())
+        })?,
+    )
+    .map_err(|_| UtxoScannerError::MappingError("Failed to deserialize commitment".to_string()))?;
 
-        // Verify that the commitment matches
-        if commitment != commitment_point {
-            return Err(UtxoScannerError::RangeProofError(
-                "Commitment does not match amount and spending key".to_string(),
-            ));
+    let metadata_sig = tari_types::ComAndPubSignature::from_rpc_bytes(
+        rpc_comsig_commitment_bytes,
+        rpc_comsig_public_nonce_bytes,
+        rpc_comsig_u_a_bytes,
+        rpc_comsig_u_x_bytes,
+    )
+    .map_err(|e| UtxoScannerError::MappingError(format!("Failed to parse ComAndPubSignature: {}", e)))?;
+
+    // Temporary: TariScript, Covenant, EncryptedData from bytes
+    // These are OK as they are primarily treated as opaque bytes for hashing by get_metadata_signature_challenge
+    let temp_script = tari_types::TariScript(script_bytes.to_vec());
+    let temp_covenant = tari_types::Covenant(covenant_bytes.to_vec());
+    let temp_encrypted_data = tari_types::EncryptedData(encrypted_data_bytes.to_vec());
+    // End Temporary
+
+    let sender_offset_pk = tari_types::CompressedPublicKey::from_point(
+        &RistrettoPoint::from_uniform_bytes(
+            sender_offset_public_key_bytes.try_into().map_err(|_| UtxoScannerError::MappingError("Bad sender_offset_pk bytes".to_string()))?
+        ).map_err(|_| UtxoScannerError::MappingError("Bad sender_offset_pk".to_string()))?
+    );
+
+    let output_version = tari_types::TransactionOutputVersion::from_u32(output_version_u32)
+        .map_err(UtxoScannerError::MappingError)?;
+
+    match output_features.range_proof_type {
+        tari_types::RangeProofType::BulletProofPlus => {
+            let proof_bytes = range_proof_bytes.ok_or_else(|| {
+                UtxoScannerError::RangeProofError("BulletProofPlus range proof bytes are missing".to_string())
+            })?;
+
+            // Initialize BulletproofsPlusService (e.g., 64-bit proofs, aggregation factor 1)
+            // Generators used here must match those used by the prover.
+            let bp_service = MyRangeProofModule::BulletproofsPlusService::new(64, 1)
+                .map_err(|e| UtxoScannerError::RangeProofError(format!("BP+ service init error: {:?}", e)))?;
+
+            let deserialized_proof = MyRangeProofModule::RangeProof::from_bytes(proof_bytes)
+                .map_err(|e| UtxoScannerError::RangeProofError(format!("Proof deserialization error: {:?}", e)))?;
+
+            let statement = MyRangeProofModule::Statement {
+                commitment: commitment_bytes.try_into().map_err(|_| {
+                    UtxoScannerError::MappingError("Invalid commitment byte length for statement".to_string())
+                })?,
+                minimum_value_promise,
+            };
+            let aggregated_statement = MyRangeProofModule::RistrettoAggregatedPublicStatement {
+                statements: vec![statement],
+            };
+
+            bp_service
+                .verify_batch(vec![&deserialized_proof], vec![&aggregated_statement])
+                .map_err(|e| UtxoScannerError::RangeProofError(format!("BP+ verification error: {:?}", e)))
         }
-
-        // Verify that the range proof exists and is of type Bulletproof+
-        if range_proof.proof_bytes.is_empty() {
-            return Err(UtxoScannerError::RangeProofError(
-                "Range proof is empty".to_string(),
-            ));
+        tari_types::RangeProofType::RevealedValue => {
+            MyRangeProofModule::verify_revealed_value_proof(
+                &commitment_point,
+                &temp_metadata_sig, // Pass the temporary constructed signature
+                &temp_script,
+                output_features,
+                &sender_offset_pk,
+                &temp_covenant,
+                &temp_encrypted_data,
+                minimum_value_promise,
+                &temp_output_version,
+            )
+            .map_err(|e| UtxoScannerError::RangeProofError(format!("RevealedValue verification error: {:?}", e)))
         }
-
-        // The range proof verification is done by the base node
-        // We just need to verify that the commitment matches the amount and spending key
-        // and that the range proof exists
-        Ok(true)
     }
+}
 
     /// Asynchronously scans for UTXOs associated with the given `view_private_key`.
     ///
@@ -275,16 +336,45 @@ impl UtxoScanner {
                             ) {
                                 Ok(decrypted) => {
                                     // 4. Verify the range proof
-                                    if let Some(ref range_proof) = output.range_proof {
-                                        if let Ok(range_proof_verified) = Self::verify_range_proof(
-                                            &output.commitment,
-                                            &decrypted.spending_key,
-                                            decrypted.amount,
-                                            range_proof,
-                                        ) {
-                                            if range_proof_verified {
-                                                println!("Range proof verified");
-                                                println!(
+                                    // Convert gRPC features to local tari_types::OutputFeatures
+                                    let current_output_features = output.features.as_ref()
+                                        .map(|f_rpc| tari_types::OutputFeatures {
+                                            output_type: tari_types::OutputType::from_u8(f_rpc.output_type as u8), // Assuming gRPC output_type is i32 that fits u8
+                                            maturity: f_rpc.maturity,
+                                            range_proof_type: tari_types::RangeProofType::from_u8(f_rpc.range_proof_type as u8)
+                                                .unwrap_or_default(),
+                                            // Other features like sidechain_features are omitted for now in tari_types::OutputFeatures
+                                        })
+                                        .unwrap_or_default(); // Use default if gRPC features is None
+
+                                    // Extract ComSignature components
+                                    let com_sig_rpc = output.metadata_signature.as_ref().ok_or_else(|| {
+                                        UtxoScannerError::MappingError("Missing metadata_signature".to_string())
+                                    })?;
+
+                                    if let Err(rp_err) = Self::verify_range_proof(
+                                        &output.commitment,
+                                        output.range_proof.as_ref().map(|rp_bytes| rp_bytes.as_slice()), // Pass Option<&[u8]>
+                                        &current_output_features,
+                                        &com_sig_rpc.commitment, // Pass rpc_comsig_commitment_bytes
+                                        &com_sig_rpc.public_nonce, // Pass rpc_comsig_public_nonce_bytes
+                                        &com_sig_rpc.signature_u,  // Pass rpc_comsig_u_a_bytes
+                                        &com_sig_rpc.signature_v,  // Pass rpc_comsig_u_x_bytes
+                                        &output.script,
+                                        &output.sender_offset_public_key,
+                                        &output.covenant,
+                                        &output.encrypted_data,
+                                        output.minimum_value_promise,
+                                        output.version, // Pass u32 version
+                                    ) {
+                                        eprintln!("Range proof verification failed for output {}: {:?}", hex::encode(&output.hash), rp_err);
+                                        // If a UTXO is ours (decrypted successfully) but fails range proof, it's a critical issue.
+                                        // For now, we'll skip it, but a real wallet might flag this.
+                                        continue;
+                                    } else {
+                                        println!("Range proof verified for output hash: {}", hex::encode(&output.hash));
+                                        // This is our UTXO!
+                                        println!(
                                                     "Decrypted output data height: {:?}",
                                                     block
                                                         .header
@@ -350,14 +440,164 @@ impl UtxoScanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // PrivateKey is still needed for generate_dummy_private_key
+    use crate::tari_types::{self, RangeProofType, TransactionOutputVersion}; // Assuming tari_types is in crate::
+    use crate::range_proof as MyRangeProofModule; // For RangeProofError
+    use curve25519_dalek::ristretto::CompressedRistretto;
 
+
+    // PrivateKey is still needed for generate_dummy_private_key
     const DUMMY_GRPC_TARGET_ADDRESS: &str = "http://127.0.0.1:18144"; // Needs to be a valid URI for tonic
 
     fn generate_dummy_private_key() -> PrivateKey {
         let key_bytes = [0u8; 32]; // Example key bytes
         PrivateKey::from_bytes(&key_bytes).expect("Failed to create dummy private key from bytes")
     }
+
+    // Helper to create default data for verify_range_proof tests
+    fn default_verify_inputs() -> (
+        Vec<u8>,                               // commitment_bytes
+        tari_types::OutputFeatures,            // output_features
+        Vec<u8>,                               // metadata_signature_bytes (placeholder)
+        Vec<u8>,                               // script_bytes
+        Vec<u8>,                               // sender_offset_public_key_bytes
+        Vec<u8>,                               // covenant_bytes
+        Vec<u8>,                               // encrypted_data_bytes
+        u64,                                   // minimum_value_promise
+        tari_types::TransactionOutputVersion,  // output_version
+    ) {
+        let commitment_point = RistrettoPoint::default();
+        let commitment_bytes = commitment_point.compress().to_bytes().to_vec();
+
+        let features = tari_types::OutputFeatures {
+            bytes: b"features".to_vec(), // Placeholder for hashing
+            range_proof_type: RangeProofType::RevealedValue, // Default to RevealedValue for easier valid case
+        };
+
+        // Placeholder metadata_signature: 32 bytes for R_a, 32 for R_x, 32 for u_a
+        let metadata_signature_bytes = vec![0u8; 32 + 32 + 32];
+        let script_bytes = b"script".to_vec();
+        let sender_offset_public_key_bytes = RistrettoPoint::default().compress().to_bytes().to_vec();
+        let covenant_bytes = b"covenant".to_vec();
+        let encrypted_data_bytes = b"encrypted".to_vec();
+        let minimum_value_promise = 50u64;
+        let output_version = TransactionOutputVersion::default();
+
+        (
+            commitment_bytes,
+            features,
+            metadata_signature_bytes,
+            script_bytes,
+            sender_offset_public_key_bytes,
+            covenant_bytes,
+            encrypted_data_bytes,
+            minimum_value_promise,
+            output_version,
+        )
+    }
+
+    #[test]
+    fn test_verify_range_proof_revealed_value_path_ok() {
+        let (
+            commitment_bytes,
+            mut features, // Make features mutable to set range_proof_type
+            _metadata_sig_bytes_placeholder, // We'll construct a valid one
+            script_bytes,
+            sender_offset_public_key_bytes,
+            covenant_bytes,
+            encrypted_data_bytes,
+            minimum_value_promise,
+            output_version,
+        ) = default_verify_inputs();
+        features.range_proof_type = RangeProofType::RevealedValue;
+
+        // Construct a valid ComAndPubSignature for RevealedValue
+        let commitment_point = RistrettoPoint::from_uniform_bytes(commitment_bytes.as_slice().try_into().unwrap()).unwrap();
+        let script = tari_types::TariScript(script_bytes.clone());
+        let covenant = tari_types::Covenant(covenant_bytes.clone());
+        let encrypted_data = tari_types::EncryptedData(encrypted_data_bytes.clone());
+        let sender_offset_pk_point = RistrettoPoint::from_uniform_bytes(sender_offset_public_key_bytes.as_slice().try_into().unwrap()).unwrap();
+        let sender_offset_pk = tari_types::CompressedPublicKey(sender_offset_pk_point.compress());
+
+        let ephemeral_commit_placeholder = RistrettoPoint::default().compress();
+        let ephemeral_pubkey_placeholder = RistrettoPoint::default().compress();
+
+        let challenge_bytes = MyRangeProofModule::get_metadata_signature_challenge(
+            &output_version,
+            &script,
+            &features,
+            &sender_offset_pk,
+            &ephemeral_commit_placeholder,
+            &ephemeral_pubkey_placeholder,
+            &commitment_point,
+            &covenant,
+            &encrypted_data,
+            minimum_value_promise,
+        );
+        let challenge_e = Scalar::from_bytes_mod_order_wide(&challenge_bytes);
+        let value_as_scalar = Scalar::from(minimum_value_promise);
+        let commit_nonce_a = Scalar::zero();
+        let expected_u_a = commit_nonce_a + challenge_e * value_as_scalar;
+
+        let mut valid_metadata_sig_bytes = Vec::new();
+        valid_metadata_sig_bytes.extend_from_slice(ephemeral_commit_placeholder.as_bytes());
+        valid_metadata_sig_bytes.extend_from_slice(ephemeral_pubkey_placeholder.as_bytes());
+        valid_metadata_sig_bytes.extend_from_slice(expected_u_a.as_bytes());
+
+
+        let result = verify_range_proof(
+            &commitment_bytes,
+            None, // No separate range_proof_bytes for RevealedValue
+            &features,
+            &valid_metadata_sig_bytes,
+            &script_bytes,
+            &sender_offset_public_key_bytes,
+            &covenant_bytes,
+            &encrypted_data_bytes,
+            minimum_value_promise,
+            // &output_version.as_u8(), // Pass the u8 if signature changes
+        );
+        assert!(result.is_ok(), "RevealedValue proof failed when it should pass: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_verify_range_proof_bulletproof_plus_path_deserialization_error() {
+        let (
+            commitment_bytes,
+            mut features,
+            metadata_sig_bytes,
+            script_bytes,
+            sender_offset_public_key_bytes,
+            covenant_bytes,
+            encrypted_data_bytes,
+            minimum_value_promise,
+            _output_version, // output_version_byte,
+        ) = default_verify_inputs();
+        features.range_proof_type = RangeProofType::BulletProofPlus;
+
+        let malformed_proof_bytes = vec![0u8; 10]; // Too short to be a valid proof
+
+        let result = verify_range_proof(
+            &commitment_bytes,
+            Some(&malformed_proof_bytes),
+            &features,
+            &metadata_sig_bytes,
+            &script_bytes,
+            &sender_offset_public_key_bytes,
+            &covenant_bytes,
+            &encrypted_data_bytes,
+            minimum_value_promise,
+            // output_version_byte,
+        );
+
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            UtxoScannerError::RangeProofError(msg) => {
+                assert!(msg.contains("Proof deserialization error") || msg.contains("Proof bytes too short"));
+            }
+            _ => panic!("Expected RangeProofError for malformed BulletProofPlus"),
+        }
+    }
+
 
     #[tokio::test]
     async fn test_utxo_scanner_new() {

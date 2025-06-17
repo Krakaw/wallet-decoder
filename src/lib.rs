@@ -28,6 +28,8 @@ pub mod emoji;
 pub mod error;
 pub mod keys;
 pub mod network;
+pub mod range_proof;
+pub mod tari_types;
 pub mod utxo;
 pub mod wallet;
 pub mod wordlist;
