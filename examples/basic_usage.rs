@@ -1,6 +1,6 @@
-use tari_address_generator::{TariAddressGenerator, Network};
+use tari_address_generator::{wallet::TariWalletError, Network, TariAddressGenerator};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), TariWalletError> {
     // Create a new address generator
     let generator = TariAddressGenerator::new();
     

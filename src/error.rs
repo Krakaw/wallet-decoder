@@ -46,6 +46,10 @@ pub enum TariError {
     #[error("Invalid key length: expected {expected}, got {actual}")]
     InvalidKeyLength { expected: usize, actual: usize },
 
+    /// Invalid key format
+    #[error("Invalid key format: {0}")]
+    InvalidKeyFormat(String),
+
     /// Blake2b hashing error
     #[error("Blake2b error: {0}")]
     Blake2bError(String),

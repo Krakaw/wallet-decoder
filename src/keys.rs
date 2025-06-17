@@ -28,6 +28,12 @@ impl PrivateKey {
         Self { scalar }
     }
 
+    /// Create a new private key from a hex string
+    pub fn from_hex(hex: &str) -> Result<Self> {
+        let bytes = hex::decode(hex).map_err(|e| TariError::InvalidKeyFormat(e.to_string()))?;
+        Self::from_bytes(&bytes)
+    }
+
     /// Create a new private key from bytes
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != 32 {
@@ -120,6 +126,12 @@ impl PublicKey {
     /// Convert to hex string
     pub fn to_hex(&self) -> String {
         hex::encode(self.as_bytes())
+    }
+
+    /// Convert from hex string
+    pub fn from_hex(hex: &str) -> Result<Self> {
+        let bytes = hex::decode(hex).map_err(|e| TariError::InvalidKeyFormat(e.to_string()))?;
+        Self::from_bytes(&bytes)
     }
 }
 
