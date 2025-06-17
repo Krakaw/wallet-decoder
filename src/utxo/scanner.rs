@@ -11,6 +11,7 @@ use futures_util::StreamExt; // For handling the stream
 use generic_array::typenum::{U32, U64};
 use generic_array::GenericArray;
 use std::mem::size_of;
+use thiserror::Error; // Added thiserror
 use tonic::transport::Channel;
 use zeroize::Zeroizing;
 
@@ -37,23 +38,19 @@ struct DecryptedOutputData {
 }
 
 /// Defines errors that can occur during UTXO scanning operations via gRPC.
-#[derive(Debug)]
+#[derive(Debug, Error)] // Added thiserror::Error
 pub enum UtxoScannerError {
-    /// An error occurred during gRPC connection to the base node.
-    /// Contains a description of the connection error.
+    #[error("gRPC connection error to base node: {0}")]
     GrpcConnection(String),
-    /// An error occurred during a gRPC request (after a connection was established).
-    /// Contains a description of the request error, potentially including status codes.
+    #[error("gRPC request error: {0}")]
     GrpcRequest(String),
-    /// An error occurred while streaming data from the base node during a gRPC call.
-    /// Contains a description of the stream error.
+    #[error("gRPC stream error: {0}")]
     GrpcStream(String),
-    /// An error occurred when mapping gRPC response types to internal application `Utxo` types,
-    /// or if a required field is missing.
+    #[error("Error mapping gRPC response to Utxo: {0}")]
     MappingError(String),
-    /// An error occurred during cryptographic operations
+    #[error("Cryptographic error during UTXO scanning: {0}")]
     CryptoError(String),
-    /// An error occurred during range proof verification
+    #[error("Range proof verification error: {0}")]
     RangeProofError(String),
 }
 

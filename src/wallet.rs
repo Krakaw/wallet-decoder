@@ -1,43 +1,25 @@
 use crate::address::TariAddress;
-// use crate::cipher_seed::{CipherSeed}; // CipherSeed not directly used in TariWallet struct/new after refactor
-use crate::error::{TariError, Result as TariResult}; // Renamed Result to TariResult to avoid conflict
+use crate::error::{TariError, Result as TariResult};
 use crate::keys::{KeyManager, PrivateKey, PublicKey};
 use crate::network::Network;
 use crate::utxo::scanner::UtxoScannerError;
-
+use thiserror::Error; // Added thiserror
 
 /// Custom error type for `TariWallet` operations, encompassing general Tari errors,
 /// errors from the UTXO scanning process, and key-related errors.
-#[derive(Debug)]
+#[derive(Debug, Error)] // Added thiserror::Error
 pub enum TariWalletError {
-    /// A general error originating from the Tari library components.
-    Tari(TariError),
-    /// An error that occurred during UTXO scanning operations via `UtxoScanner`.
-    Scanner(UtxoScannerError),
-    /// An error related to cryptographic key operations (e.g., invalid key format).
-    Key(crate::keys::KeyError),
+    #[error("Tari general error: {0}")]
+    Tari(#[from] TariError), // TariError from src/error.rs already uses thiserror
+
+    #[error("UTXO scanner error: {0}")]
+    Scanner(#[from] UtxoScannerError), // Now UtxoScannerError will also use thiserror
+
+    #[error("Cryptographic key error: {0}")]
+    Key(#[from] crate::keys::KeyError), // KeyError from src/keys.rs already uses thiserror
 }
 
-impl From<TariError> for TariWalletError {
-    fn from(err: TariError) -> Self {
-        TariWalletError::Tari(err)
-    }
-}
-
-impl From<UtxoScannerError> for TariWalletError {
-    fn from(err: UtxoScannerError) -> Self {
-        TariWalletError::Scanner(err)
-    }
-}
-
-impl From<crate::keys::KeyError> for TariWalletError {
-    fn from(err: crate::keys::KeyError) -> Self {
-        TariWalletError::Key(err)
-    }
-}
-
-
-
+// Manual From implementations are now removed as #[from] handles them.
 
 /// A complete Tari wallet, encapsulating cryptographic keys, the wallet address,
 /// seed phrase, network information, and UTXO management capabilities.
@@ -76,7 +58,7 @@ impl TariWallet {
         view_private_key: PrivateKey,
         spend_private_key: PrivateKey,
         seed_phrase: String,
-    ) -> Result<Self, TariWalletError> { // UtxoScanner::new can still return Err, so keep Result
+    ) -> Result<Self, TariWalletError> {
         let view_public_key = view_private_key.public_key();
         let spend_public_key = spend_private_key.public_key();
         
@@ -214,12 +196,12 @@ impl TariAddressGenerator {
     /// # Returns
     /// A `Result` containing the new `TariWallet` or a `TariWalletError`.
     pub fn generate_new_wallet(&self, network: Network) -> Result<TariWallet, TariWalletError> {
-        let cipher_seed = crate::cipher_seed::CipherSeed::new().map_err(TariError::from)?;
-        let seed_phrase = cipher_seed.to_mnemonic(self.passphrase.clone()).map_err(TariError::from)?;
+        let cipher_seed = crate::cipher_seed::CipherSeed::new()?; // Updated to use ? directly
+        let seed_phrase = cipher_seed.to_mnemonic(self.passphrase.clone())?;
         let master_key = cipher_seed.master_key();
         let key_manager = KeyManager::new(master_key);
-        let spend_private_key = key_manager.derive_key("comms", 0).map_err(TariError::from)?;
-        let view_private_key = key_manager.derive_key("data encryption", 0).map_err(TariError::from)?;
+        let spend_private_key = key_manager.derive_key("comms", 0)?;
+        let view_private_key = key_manager.derive_key("data encryption", 0)?;
         TariWallet::new(
             network,
             view_private_key,
@@ -237,11 +219,11 @@ impl TariAddressGenerator {
     /// # Returns
     /// A `Result` containing the restored `TariWallet` or a `TariWalletError`.
     pub fn restore_from_seed_phrase(&self, seed_phrase: &str, network: Network) -> Result<TariWallet, TariWalletError> {
-        let cipher_seed = crate::cipher_seed::CipherSeed::from_mnemonic(seed_phrase, self.passphrase.clone()).map_err(TariError::from)?;
+        let cipher_seed = crate::cipher_seed::CipherSeed::from_mnemonic(seed_phrase, self.passphrase.clone())?;
         let master_key = cipher_seed.master_key();
         let key_manager = KeyManager::new(master_key);
-        let spend_private_key = key_manager.derive_key("comms", 0).map_err(TariError::from)?;
-        let view_private_key = key_manager.derive_key("data encryption", 0).map_err(TariError::from)?;
+        let spend_private_key = key_manager.derive_key("comms", 0)?;
+        let view_private_key = key_manager.derive_key("data encryption", 0)?;
         TariWallet::new(
             network,
             view_private_key,
@@ -261,18 +243,22 @@ impl TariAddressGenerator {
     /// Returns `TariWalletError::Tari(TariError::InvalidKeyLength)` if entropy is not 16 bytes.
     pub fn restore_from_entropy(&self, entropy: &[u8], network: Network) -> Result<TariWallet, TariWalletError> {
         if entropy.len() != 16 {
-            return Err(TariWalletError::Tari(TariError::InvalidKeyLength {
+            // This explicit error mapping will be handled by #[from] if TariError::InvalidKeyLength becomes part of TariWalletError::Tari
+            // However, since TariError itself is an enum, the #[from] applies to TariError as a whole.
+            // This specific variant mapping might still be preferred if we want to retain this exact error structure.
+            // For now, converting to TariError first, then letting #[from] handle TariError into TariWalletError.
+            return Err(TariError::InvalidKeyLength {
                 expected: 16,
                 actual: entropy.len(),
-            }));
+            }.into()); // .into() converts TariError to TariWalletError via #[from]
         }
         let mut master_key = [0u8; 16];
         master_key.copy_from_slice(entropy);
         let key_manager = KeyManager::new(master_key);
-        let spend_private_key = key_manager.derive_key("comms", 0).map_err(TariError::from)?;
-        let view_private_key = key_manager.derive_key("data encryption", 0).map_err(TariError::from)?;
+        let spend_private_key = key_manager.derive_key("comms", 0)?;
+        let view_private_key = key_manager.derive_key("data encryption", 0)?;
         let cipher_seed = crate::cipher_seed::CipherSeed::from_components(0x02, 0, master_key, [0u8; 5]);
-        let seed_phrase = cipher_seed.to_mnemonic(self.passphrase.clone()).map_err(TariError::from)?;
+        let seed_phrase = cipher_seed.to_mnemonic(self.passphrase.clone())?;
         TariWallet::new(
             network,
             view_private_key,
@@ -305,7 +291,7 @@ impl TariAddressGenerator {
     }
 
     /// Parse address from string (auto-detect format)
-    pub fn parse_address(&self, address_str: &str) -> TariResult<TariAddress> {
+    pub fn parse_address(&self, address_str: &str) -> TariResult<TariAddress> { // Returns TariResult
 
         // Try emoji first (contains Unicode)
         if address_str.trim().chars().any(|c| !c.is_ascii()) {
@@ -330,7 +316,7 @@ impl Default for TariAddressGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const DUMMY_NODE_ADDRESS: &str = "http://127.0.0.1:18143"; // Dummy address for tests
+    // const DUMMY_NODE_ADDRESS: &str = "http://127.0.0.1:18143"; // Dummy address for tests, warning if unused
 
     #[test]
     fn test_wallet_generation() {
