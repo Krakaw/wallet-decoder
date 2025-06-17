@@ -1,8 +1,11 @@
 use crate::keys::{PrivateKey, PublicKey};
+use crate::utxo::range_proof::RangeProof as LocalRangeProof;
 use crate::utxo::rpc::{BaseNodeClient, GetBlocksRequest, SearchUtxosRequest};
-use crate::utxo::rpc_generated::tari_rpc::RangeProof;
+use crate::utxo::rpc_generated::tari_rpc::RangeProof; // Still needed for output.range_proof type
 use crate::utxo::types::{OutputType, Utxo};
 use blake2::{Blake2b, Digest};
+use tari_common_types::types::CompressedCommitment;
+use tari_crypto::ristretto::RangeProof as CryptoRangeProof;
 use chacha20poly1305::AeadInPlace;
 use chacha20poly1305::{aead::KeyInit, Key, Tag, XChaCha20Poly1305, XNonce};
 use curve25519_dalek::ristretto::RistrettoPoint;
@@ -55,6 +58,23 @@ pub enum UtxoScannerError {
     CryptoError(String),
     /// An error occurred during range proof verification
     RangeProofError(String),
+    /// An error occurred during byte-to-type conversions for proof/commitment.
+    ConversionError(String),
+}
+
+use tari_common_types::types::CommitmentError as TariCommitmentError;
+use tari_crypto::errors::RangeProofError as TariRangeProofError;
+
+impl From<TariCommitmentError> for UtxoScannerError {
+    fn from(err: TariCommitmentError) -> Self {
+        UtxoScannerError::ConversionError(format!("Commitment error: {}", err))
+    }
+}
+
+impl From<TariRangeProofError> for UtxoScannerError {
+    fn from(err: TariRangeProofError) -> Self {
+        UtxoScannerError::ConversionError(format!("Crypto range proof error: {}", err))
+    }
 }
 
 /// Handles scanning for UTXOs by connecting to a Tari base node via gRPC.
@@ -165,41 +185,6 @@ impl UtxoScanner {
         key
     }
 
-    /// Verify the range proof for an output
-    fn verify_range_proof(
-        commitment: &[u8],
-        spending_key: &PrivateKey,
-        amount: u64,
-        range_proof: &RangeProof,
-    ) -> Result<bool, UtxoScannerError> {
-        // Convert commitment bytes to RistrettoPoint
-        let commitment_point = RistrettoPoint::hash_from_bytes::<Blake2b<U64>>(commitment);
-
-        // Create a Pedersen commitment from the amount and spending key
-        let amount_scalar = Scalar::from(amount);
-        let commitment = RistrettoPoint::mul_base(&amount_scalar)
-            + RistrettoPoint::mul_base(&spending_key.as_scalar());
-
-        // Verify that the commitment matches
-        if commitment != commitment_point {
-            return Err(UtxoScannerError::RangeProofError(
-                "Commitment does not match amount and spending key".to_string(),
-            ));
-        }
-
-        // Verify that the range proof exists and is of type Bulletproof+
-        if range_proof.proof_bytes.is_empty() {
-            return Err(UtxoScannerError::RangeProofError(
-                "Range proof is empty".to_string(),
-            ));
-        }
-
-        // The range proof verification is done by the base node
-        // We just need to verify that the commitment matches the amount and spending key
-        // and that the range proof exists
-        Ok(true)
-    }
-
     /// Asynchronously scans for UTXOs associated with the given `view_private_key`.
     ///
     /// This method handles the entire process of connecting to the node, sending the scan request,
@@ -274,59 +259,57 @@ impl UtxoScanner {
                                 &output.encrypted_data,
                             ) {
                                 Ok(decrypted) => {
-                                    // 4. Verify the range proof
-                                    if let Some(ref range_proof) = output.range_proof {
-                                        if let Ok(range_proof_verified) = Self::verify_range_proof(
-                                            &output.commitment,
-                                            &decrypted.spending_key,
-                                            decrypted.amount,
-                                            range_proof,
-                                        ) {
-                                            if range_proof_verified {
-                                                println!("Range proof verified");
-                                                println!(
-                                                    "Decrypted output data height: {:?}",
-                                                    block
-                                                        .header
-                                                        .clone()
-                                                        .map(|h| h.height)
-                                                        .unwrap_or(0)
-                                                );
-                                                println!("Decrypted output data: {:?}", decrypted);
-                                                break;
-                                                // This is our UTXO!
-                                                let utxo = Utxo {
-                                                    output_hash: hex::encode(&output.hash),
-                                                    value: decrypted.amount,
-                                                    block_height: block
-                                                        .header
-                                                        .clone()
-                                                        .unwrap()
-                                                        .height,
-                                                    script_pubkey: hex::encode(&output.script),
-                                                    output_type: if let Some(features) =
-                                                        &output.features
-                                                    {
-                                                        match features.output_type {
-                                                    0 => OutputType::Standard,
-                                                    1 => OutputType::Coinbase,
-                                                    2 => OutputType::Burn,
-                                                    3 => OutputType::ValidatorNodeRegistration,
-                                                    4 => OutputType::CodeTemplateRegistration,
-                                                    _ => OutputType::Standard,
-                                                }
-                                                    } else {
-                                                        OutputType::Standard
-                                                    },
-                                                };
-                                                found_utxos.push(utxo);
-                                            }
+                                    println!(
+                                        "Decrypted output data height: {:?}, value: {}, for output hash: {}",
+                                        block.header.clone().map(|h| h.height).unwrap_or(0),
+                                        decrypted.amount,
+                                        hex::encode(&output.hash)
+                                    );
+
+                                    let commitment_bytes = output.commitment.clone();
+                                    let utxo_commitment = CompressedCommitment::from_canonical_bytes(&commitment_bytes)
+                                        .map_err(|e| UtxoScannerError::ConversionError(format!("Failed to create CompressedCommitment: {}", e)))?;
+
+                                    let utxo_proof = if let Some(rpc_proof) = output.range_proof.as_ref() {
+                                        if rpc_proof.proof_bytes.is_empty() {
+                                            None
+                                        } else {
+                                            let crypto_proof = CryptoRangeProof::from_bytes(&rpc_proof.proof_bytes)
+                                                .map_err(|e| UtxoScannerError::ConversionError(format!("Failed to create CryptoRangeProof: {}", e)))?;
+                                            Some(LocalRangeProof(crypto_proof))
                                         }
                                     } else {
-                                        continue;
-                                    }
+                                        None
+                                    };
+
+                                    let output_type = if let Some(features) = &output.features {
+                                        match features.output_type {
+                                            0 => OutputType::Standard,
+                                            1 => OutputType::Coinbase,
+                                            2 => OutputType::Burn,
+                                            3 => OutputType::ValidatorNodeRegistration,
+                                            4 => OutputType::CodeTemplateRegistration,
+                                            _ => OutputType::Standard,
+                                        }
+                                    } else {
+                                        OutputType::Standard
+                                    };
+
+                                    let utxo = Utxo {
+                                        output_hash: hex::encode(&output.hash),
+                                        value: decrypted.amount,
+                                        block_height: block.header.clone().unwrap().height,
+                                        script_pubkey: hex::encode(&output.script),
+                                        output_type,
+                                        commitment: utxo_commitment,
+                                        proof: utxo_proof,
+                                    };
+                                    found_utxos.push(utxo);
+                                    // Removed break statement that was here
                                 }
-                                Err(e) => {
+                                Err(_e) => {
+                                    // This is common, as we try to decrypt all outputs
+                                    // eprintln!("Failed to decrypt output data (this is expected for many outputs): {:?}", e);
                                     continue;
                                 }
                             }

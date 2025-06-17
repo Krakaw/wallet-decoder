@@ -79,4 +79,26 @@ impl From<blake2::digest::InvalidLength> for TariError {
     fn from(err: blake2::digest::InvalidLength) -> Self {
         TariError::Blake2bError(err.to_string())
     }
-} 
+}
+
+use tari_common_types::types::CommitmentError;
+use tari_crypto::errors::RangeProofError as CryptoRangeProofError;
+
+#[derive(Debug)]
+pub enum TransactionError {
+    RangeProofError(String),
+    CryptoError(CryptoRangeProofError),
+    CommitmentError(CommitmentError),
+}
+
+impl From<CryptoRangeProofError> for TransactionError {
+    fn from(err: CryptoRangeProofError) -> Self {
+        TransactionError::CryptoError(err)
+    }
+}
+
+impl From<CommitmentError> for TransactionError {
+    fn from(err: CommitmentError) -> Self {
+        TransactionError::CommitmentError(err)
+    }
+}

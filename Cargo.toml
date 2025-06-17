@@ -33,14 +33,19 @@ tokio = { version = "1.0", features = ["full"] }
 generic-array = "1.2.0"
 bulletproofs-plus = "0.1.0"
 chacha20poly1305 = "0.10.1"
+tari_common_types = "0.50"
+tari_crypto = { version = "0.20.1", features = ["range-proofs", "commitment"] }
+tari_script = "0.13"
+borsh = "1.0"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }
+rand = "0.8"
 
 [build-dependencies]
 tonic-build = "0.11"
 prost-build = "0.12"
-
+# Force lockfile regeneration
 [lib]
 name = "tari_address_generator"
 crate-type = ["lib", "cdylib"]

@@ -1,9 +1,7 @@
 use clap::Parser;
 use tari_address_generator::{
-    TariAddressGenerator,
-    utxo::scanner::UtxoScanner,
-    Network,
-    wallet::TariWalletError,
+    utxo::{create_range_proof_service, scanner::UtxoScanner, verify_range_proof},
+    Network, TariAddressGenerator, wallet::TariWalletError,
 };
 
 #[derive(Parser, Debug)]
@@ -36,7 +34,19 @@ async fn main() -> Result<(), TariWalletError> {
         &view_key_private,
     ).await?;
 
-    println!("UTXOs: {:?}", utxos.len());
+    if utxos.is_empty() {
+        println!("No UTXOs found for the given seed phrase.");
+    } else {
+        println!("Found {} UTXO(s). Verifying range proofs...", utxos.len());
+        let range_proof_service = create_range_proof_service();
+        for (i, utxo) in utxos.iter().enumerate() {
+            println!("Verifying UTXO #{} (Hash: {})", i + 1, utxo.output_hash);
+            match verify_range_proof(utxo, &range_proof_service) {
+                Ok(_) => println!("  Range proof is VALID."),
+                Err(e) => println!("  Range proof is INVALID: {:?}", e),
+            }
+        }
+    }
 
     Ok(())
 }

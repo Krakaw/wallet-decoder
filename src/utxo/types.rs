@@ -1,9 +1,15 @@
+pub mod range_proof;
+
+use super::range_proof::RangeProof;
+use serde::{Deserialize, Serialize};
+use tari_common_types::types::CompressedCommitment;
+
 /// Represents an Unspent Transaction Output (UTXO).
 ///
 /// UTXOs are the fundamental building blocks of transactions in many cryptocurrencies.
 /// Each UTXO represents a specific amount of cryptocurrency that has been received
 /// by a wallet and has not yet been spent.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Utxo {
     /// The unique hash identifying this output.
     /// This is often the hash of the transaction that created the output, combined with an output index.
@@ -19,6 +25,10 @@ pub struct Utxo {
     pub script_pubkey: String,
     /// The type of output, indicating how it was created or its specific characteristics.
     pub output_type: OutputType,
+    /// The range proof for the UTXO.
+    pub proof: Option<RangeProof>,
+    /// The homomorphic commitment to the value of the UTXO.
+    pub commitment: CompressedCommitment,
 }
 
 /// Represents detailed information about a transaction.
