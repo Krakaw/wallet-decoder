@@ -9,7 +9,7 @@ repository = "https://github.com/krakaw/wallet-decoder"
 
 
 [dependencies]
-curve25519-dalek = "4.1"
+curve25519-dalek = {version = "4.1", features = ["group", "digest"]}
 blake2 = "0.10"
 tonic = "0.11"
 prost = "0.12"
@@ -30,6 +30,9 @@ lazy_static = "1.4"
 clap = { version = "4.5.28", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
+generic-array = "1.2.0"
+bulletproofs-plus = "0.1.0"
+chacha20poly1305 = "0.10.1"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full"] }

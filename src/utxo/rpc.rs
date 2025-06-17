@@ -20,11 +20,9 @@ pub use crate::utxo::rpc_generated::tari_rpc::{
 impl BaseNodeClient<tonic::transport::Channel> {
     pub async fn scan_for_utxos(
         &mut self,
-        request: tonic::Request<SearchUtxosRequest>,
+        request: tonic::Request<GetBlocksRequest>,
     ) -> Result<tonic::Response<Streaming<HistoricalBlock>>, tonic::Status> {
-        let response = self.get_blocks(tonic::Request::new(GetBlocksRequest {
-            heights: vec![0],
-        })).await?;
+        let response = self.get_blocks(request).await?;
         return Ok(response);
         // Call the base node's search_utxos RPC
         // let response = self.search_utxos(request).await?;

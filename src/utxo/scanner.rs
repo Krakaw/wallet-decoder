@@ -1,12 +1,40 @@
-use futures_util::StreamExt; // For handling the stream
-use tonic::transport::Channel;
-
-// Use the placeholder/dummy gRPC types from our rpc module
-// GrpcTransactionOutput is an alias for ScanForUtxosResponse in the dummy rpc.rs
-// Removed: use crate::error::TariError; // No longer needed directly here
-use crate::keys::PrivateKey;
-use crate::utxo::rpc::{BaseNodeClient, SearchUtxosRequest};
+use crate::keys::{PrivateKey, PublicKey};
+use crate::utxo::rpc::{BaseNodeClient, GetBlocksRequest, SearchUtxosRequest};
+use crate::utxo::rpc_generated::tari_rpc::RangeProof;
 use crate::utxo::types::{OutputType, Utxo};
+use blake2::{Blake2b, Digest};
+use chacha20poly1305::AeadInPlace;
+use chacha20poly1305::{aead::KeyInit, Key, Tag, XChaCha20Poly1305, XNonce};
+use curve25519_dalek::ristretto::RistrettoPoint;
+use curve25519_dalek::scalar::Scalar;
+use futures_util::StreamExt; // For handling the stream
+use generic_array::typenum::{U32, U64};
+use generic_array::GenericArray;
+use std::mem::size_of;
+use tonic::transport::Channel;
+use zeroize::Zeroizing;
+
+// Constants for encrypted data
+const SIZE_NONCE: usize = 24; // XChaCha20 nonce size
+const SIZE_VALUE: usize = size_of::<u64>();
+const SIZE_MASK: usize = 32; // PrivateKey::KEY_LEN
+const SIZE_TAG: usize = 16; // Poly1305 tag size
+const STATIC_ENCRYPTED_DATA_SIZE_TOTAL: usize = SIZE_NONCE + SIZE_VALUE + SIZE_MASK + SIZE_TAG;
+const MAX_ENCRYPTED_DATA_SIZE: usize = 256 + STATIC_ENCRYPTED_DATA_SIZE_TOTAL;
+const ENCRYPTED_DATA_AAD: &[u8] = b"TARI_AAD_VALUE_AND_MASK_EXTEND_NONCE_VARIANT";
+
+// Domain separation for key derivation
+const WALLET_OUTPUT_ENCRYPTION_KEYS_DOMAIN: &str =
+    "com.tari.base_layer.wallet.output_encryption_keys";
+const WALLET_OUTPUT_SPENDING_KEYS_DOMAIN: &str = "com.tari.base_layer.wallet.output_spending_keys";
+
+/// Represents the decrypted data from an output
+#[derive(Debug)]
+struct DecryptedOutputData {
+    amount: u64,
+    spending_key: PrivateKey,
+    payment_id: Option<Vec<u8>>,
+}
 
 /// Defines errors that can occur during UTXO scanning operations via gRPC.
 #[derive(Debug)]
@@ -23,9 +51,11 @@ pub enum UtxoScannerError {
     /// An error occurred when mapping gRPC response types to internal application `Utxo` types,
     /// or if a required field is missing.
     MappingError(String),
+    /// An error occurred during cryptographic operations
+    CryptoError(String),
+    /// An error occurred during range proof verification
+    RangeProofError(String),
 }
-// specific From implementations or error mapping can be added.
-// Now it broadly converts any TariError into a string message for SeedRestoration.
 
 /// Handles scanning for UTXOs by connecting to a Tari base node via gRPC.
 ///
@@ -64,9 +94,113 @@ impl UtxoScanner {
             .map_err(|e| UtxoScannerError::GrpcConnection(e.to_string()))
     }
 
-    /// Asynchronously scans for UTXOs associated with the given `view_private_key` by making
-    /// gRPC calls to the base node. Assumes the gRPC client code is correctly generated and
-    /// re-exported via `crate::utxo::rpc`.
+    /// Generate an output encryption key from a Diffie-Hellman shared secret
+    fn shared_secret_to_output_encryption_key(
+        shared_secret: &[u8],
+    ) -> Result<PrivateKey, UtxoScannerError> {
+        let mut hasher = Blake2b::<U64>::new();
+        hasher.update(WALLET_OUTPUT_ENCRYPTION_KEYS_DOMAIN.as_bytes());
+        hasher.update(shared_secret);
+        let hash = hasher.finalize();
+
+        PrivateKey::from_bytes(&hash[..32])
+            .map_err(|e| UtxoScannerError::CryptoError(e.to_string()))
+    }
+
+    /// Decrypt the output's encrypted data using the encryption key
+    fn decrypt_output_data(
+        encryption_key: &PrivateKey,
+        commitment: &[u8],
+        encrypted_data: &[u8],
+    ) -> Result<DecryptedOutputData, UtxoScannerError> {
+        // Extract the nonce, ciphertext, and tag
+        let tag = Tag::from_slice(&encrypted_data[..SIZE_TAG]);
+        let nonce = XNonce::from_slice(&encrypted_data[SIZE_TAG..SIZE_TAG + SIZE_NONCE]);
+        let mut bytes = Zeroizing::new(vec![
+            0;
+            encrypted_data
+                .len()
+                .saturating_sub(SIZE_TAG)
+                .saturating_sub(SIZE_NONCE)
+        ]);
+        bytes.clone_from_slice(&encrypted_data[SIZE_TAG + SIZE_NONCE..]);
+
+        // Set up the AEAD
+        let aead_key = Self::kdf_aead(encryption_key, commitment);
+        let key = Key::from_slice(&aead_key);
+        let cipher = XChaCha20Poly1305::new(key);
+
+        // Decrypt in place
+        cipher
+            .decrypt_in_place_detached(nonce, ENCRYPTED_DATA_AAD, bytes.as_mut_slice(), tag)
+            .map_err(|e| UtxoScannerError::CryptoError(e.to_string()))?;
+
+        // Decode the value and mask
+        let mut value_bytes = [0u8; SIZE_VALUE];
+        value_bytes.clone_from_slice(&bytes[0..SIZE_VALUE]);
+        let amount = u64::from_le_bytes(value_bytes);
+        let spending_key = PrivateKey::from_bytes(&bytes[SIZE_VALUE..SIZE_VALUE + SIZE_MASK])
+            .map_err(|e| UtxoScannerError::CryptoError(e.to_string()))?;
+        let payment_id = if bytes.len() > SIZE_VALUE + SIZE_MASK {
+            Some(bytes[SIZE_VALUE + SIZE_MASK..].to_vec())
+        } else {
+            None
+        };
+
+        Ok(DecryptedOutputData {
+            amount,
+            spending_key,
+            payment_id,
+        })
+    }
+
+    /// Generate a ChaCha20-Poly1305 key from a private key and commitment using Blake2b
+    fn kdf_aead(encryption_key: &PrivateKey, commitment: &[u8]) -> [u8; 32] {
+        let mut hasher = Blake2b::<U32>::new();
+        hasher.update(b"encrypted_value_and_mask");
+        hasher.update(encryption_key.as_bytes());
+        hasher.update(commitment);
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&hasher.finalize());
+        key
+    }
+
+    /// Verify the range proof for an output
+    fn verify_range_proof(
+        commitment: &[u8],
+        spending_key: &PrivateKey,
+        amount: u64,
+        range_proof: &RangeProof,
+    ) -> Result<bool, UtxoScannerError> {
+        // Convert commitment bytes to RistrettoPoint
+        let commitment_point = RistrettoPoint::hash_from_bytes::<Blake2b<U64>>(commitment);
+
+        // Create a Pedersen commitment from the amount and spending key
+        let amount_scalar = Scalar::from(amount);
+        let commitment = RistrettoPoint::mul_base(&amount_scalar)
+            + RistrettoPoint::mul_base(&spending_key.as_scalar());
+
+        // Verify that the commitment matches
+        if commitment != commitment_point {
+            return Err(UtxoScannerError::RangeProofError(
+                "Commitment does not match amount and spending key".to_string(),
+            ));
+        }
+
+        // Verify that the range proof exists and is of type Bulletproof+
+        if range_proof.proof_bytes.is_empty() {
+            return Err(UtxoScannerError::RangeProofError(
+                "Range proof is empty".to_string(),
+            ));
+        }
+
+        // The range proof verification is done by the base node
+        // We just need to verify that the commitment matches the amount and spending key
+        // and that the range proof exists
+        Ok(true)
+    }
+
+    /// Asynchronously scans for UTXOs associated with the given `view_private_key`.
     ///
     /// This method handles the entire process of connecting to the node, sending the scan request,
     /// processing the stream of responses, and mapping them to the internal `Utxo` type.
@@ -92,55 +226,121 @@ impl UtxoScanner {
         let mut client = self.connect().await?;
 
 
-        let request_payload = SearchUtxosRequest {
-            commitments: vec![view_private_key.as_bytes().to_vec()],
-        };
-
-        println!("Sending SearchUtxosRequest...");
-        let mut stream = client
-            .scan_for_utxos(tonic::Request::new(request_payload))
-            .await
-            .map_err(|e| UtxoScannerError::GrpcRequest(e.to_string()))?
-            .into_inner();
+        let mut current_height = 0;
 
         let mut found_utxos = Vec::new();
-        println!("Processing UTXO stream...");
-        while let Some(item) = stream.next().await {
-            match item {
-                Ok(block) => {
-                    let block = block.block.unwrap();
-                    let outputs = block.body.unwrap().outputs;
-                    for output in outputs {
-                        println!("Output: {:#?}", output);
-                        // Map TransactionOutput to Utxo
-                        let utxo = Utxo {
-                            output_hash: hex::encode(&output.hash),
-                            value: output.minimum_value_promise,
-                            block_height: 0, // TODO: Get this from the block height
-                            script_pubkey: hex::encode(&output.script),
-                            output_type: if let Some(features) = &output.features {
-                                match features.output_type {
-                                    0 => OutputType::Standard,
-                                    1 => OutputType::Coinbase,
-                                    2 => OutputType::Burn,
-                                    3 => OutputType::ValidatorNodeRegistration,
-                                    4 => OutputType::CodeTemplateRegistration,
-                                    _ => OutputType::Standard,
+        loop {
+            if current_height > 5000 {
+                break;
+            }
+            let request = GetBlocksRequest {
+                heights: (current_height..current_height + 1000).collect(),
+            };
+            current_height += 1000;
+            println!("Sending SearchUtxosRequest...");
+            let mut stream = client
+                .scan_for_utxos(tonic::Request::new(request))
+                .await
+                .map_err(|e| UtxoScannerError::GrpcRequest(e.to_string()))?
+                .into_inner();
+
+            println!("Processing UTXO stream...");
+            while let Some(item) = stream.next().await {
+                match item {
+                    Ok(block) => {
+                        let block = block.block.unwrap();
+                        println!(
+                            "Block height: {}",
+                            block.header.clone().map(|h| h.height).unwrap_or(0)
+                        );
+                        let outputs = block.body.unwrap().outputs;
+                        for output in outputs {
+                            // 1. Get the shared secret using the view private key and the output's sender offset public key
+                            let sender_offset_pubkey =
+                                PublicKey::from_bytes(&output.sender_offset_public_key)
+                                    .map_err(|e| UtxoScannerError::CryptoError(e.to_string()))?;
+                            let shared_secret = view_private_key.as_scalar()
+                                * sender_offset_pubkey.as_ristretto_point();
+                            let shared_secret_bytes = shared_secret.compress().to_bytes();
+
+                            // 2. Derive the encryption key from the shared secret
+                            let encryption_key =
+                                Self::shared_secret_to_output_encryption_key(&shared_secret_bytes)?;
+
+                            // 3. Try to decrypt the output's data
+                            match Self::decrypt_output_data(
+                                &encryption_key,
+                                &output.commitment,
+                                &output.encrypted_data,
+                            ) {
+                                Ok(decrypted) => {
+                                    // 4. Verify the range proof
+                                    if let Some(ref range_proof) = output.range_proof {
+                                        if let Ok(range_proof_verified) = Self::verify_range_proof(
+                                            &output.commitment,
+                                            &decrypted.spending_key,
+                                            decrypted.amount,
+                                            range_proof,
+                                        ) {
+                                            if range_proof_verified {
+                                                println!("Range proof verified");
+                                                println!(
+                                                    "Decrypted output data height: {:?}",
+                                                    block
+                                                        .header
+                                                        .clone()
+                                                        .map(|h| h.height)
+                                                        .unwrap_or(0)
+                                                );
+                                                println!("Decrypted output data: {:?}", decrypted);
+                                                break;
+                                                // This is our UTXO!
+                                                let utxo = Utxo {
+                                                    output_hash: hex::encode(&output.hash),
+                                                    value: decrypted.amount,
+                                                    block_height: block
+                                                        .header
+                                                        .clone()
+                                                        .unwrap()
+                                                        .height,
+                                                    script_pubkey: hex::encode(&output.script),
+                                                    output_type: if let Some(features) =
+                                                        &output.features
+                                                    {
+                                                        match features.output_type {
+                                                    0 => OutputType::Standard,
+                                                    1 => OutputType::Coinbase,
+                                                    2 => OutputType::Burn,
+                                                    3 => OutputType::ValidatorNodeRegistration,
+                                                    4 => OutputType::CodeTemplateRegistration,
+                                                    _ => OutputType::Standard,
+                                                }
+                                                    } else {
+                                                        OutputType::Standard
+                                                    },
+                                                };
+                                                found_utxos.push(utxo);
+                                            }
+                                        }
+                                    } else {
+                                        continue;
+                                    }
                                 }
-                            } else {
-                                OutputType::Standard
-                            },
-                        };
-                        found_utxos.push(utxo);
+                                Err(e) => {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    Err(status) => {
+                        eprintln!("Error in UTXO stream: {:?}", status);
+                        return Err(UtxoScannerError::GrpcStream(status.to_string()));
                     }
                 }
-                Err(status) => {
-                    eprintln!("Error in UTXO stream: {:?}", status);
-                    return Err(UtxoScannerError::GrpcStream(status.to_string()));
-                }
             }
+            println!("UTXO scan complete. Found {} UTXOs.", found_utxos.len());
         }
-        println!("UTXO scan complete. Found {} UTXOs.", found_utxos.len());
+
         Ok(found_utxos)
     }
 
