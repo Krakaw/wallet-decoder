@@ -229,20 +229,14 @@ impl TariAddressGenerator {
         CipherSeed::from_mnemonic(seed_phrase, self.passphrase.clone()).is_ok()
     }
 
-    /// Parse address from string (auto-detect format)
+    /// Parse address from string (auto-detect format) with detailed error reporting
     pub fn parse_address(&self, address_str: &str) -> Result<TariAddress> {
+        TariAddress::parse_with_detailed_errors(address_str)
+    }
 
-        // Try emoji first (contains Unicode)
-        if address_str.trim().chars().any(|c| !c.is_ascii()) {
-            TariAddress::from_emoji(address_str)
-        } else {
-            // Try Base58 if that fails, try hex
-            if let Ok(address) = TariAddress::from_base58(address_str) {
-                Ok(address)
-            } else {
-                TariAddress::from_hex(address_str)
-            }
-        }
+    /// Parse address with comprehensive component breakdown showing each part and hex data
+    pub fn parse_address_with_breakdown(&self, address_str: &str) -> Result<TariAddress> {
+        TariAddress::parse_with_component_breakdown(address_str)
     }
 }
 
