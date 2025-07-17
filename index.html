@@ -73,6 +73,7 @@
             margin-bottom: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            position: relative;
         }
         .result-item h3 {
             margin-top: 0;
@@ -82,6 +83,32 @@
             margin-bottom: 15px;
             word-break: break-all;
             overflow-wrap: break-word;
+        }
+        .clear-button {
+            background-color: #dc3545 !important;
+        }
+        .clear-button:hover {
+            background-color: #c82333 !important;
+        }
+        .delete-button {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background-color: transparent !important;
+            border: 1px solid #666 !important;
+            color: #999 !important;
+            padding: 6px 8px !important;
+            font-size: 14px !important;
+            border-radius: 4px !important;
+            opacity: 0.6;
+            transition: all 0.2s ease;
+            margin: 5px;
+        }
+        .delete-button:hover {
+            background-color: #dc3545 !important;
+            color: white !important;
+            border-color: #dc3545 !important;
+            opacity: 1;
         }
         .result-content {
             font-family: monospace;
@@ -303,7 +330,10 @@
     <div id="decode-tab" class="tab-content active">
         <div class="input-group">
             <input type="text" id="address" placeholder="Enter Tari address" autofocus>
-            <button onclick="decodeAddress()">Decode Address</button>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button onclick="decodeAddress()">Decode Address</button>
+                <button onclick="clearAll()" class="clear-button" style="margin-left: auto;">Clear All</button>
+            </div>
         </div>
         <div id="preview" class="result-container" style="opacity: 0.7;"></div>
         <div id="decode-result" class="result-container"></div>
@@ -392,10 +422,45 @@
             const address = document.getElementById('address').value;
             if (!address) return;
             
+            // Add address to URL parameters
+            addAddressToUrl(address);
+            
             await decodeAndDisplayAddress(address, true, true);
             document.getElementById('address').value = '';
             clearPreview();
         };
+
+        function addAddressToUrl(address) {
+            const url = new URL(window.location);
+            const addresses = url.searchParams.getAll('address');
+            
+            // Only add if not already present
+            if (!addresses.includes(address)) {
+                url.searchParams.append('address', address);
+                window.history.replaceState({}, '', url);
+            }
+        }
+
+        function removeAddressFromUrl(address) {
+            const url = new URL(window.location);
+            const addresses = url.searchParams.getAll('address');
+            
+            // Remove all address parameters and re-add the ones we want to keep
+            url.searchParams.delete('address');
+            addresses.forEach(addr => {
+                if (addr !== address) {
+                    url.searchParams.append('address', addr);
+                }
+            });
+            
+            window.history.replaceState({}, '', url);
+        }
+
+        function clearAllAddressesFromUrl() {
+            const url = new URL(window.location);
+            url.searchParams.delete('address');
+            window.history.replaceState({}, '', url);
+        }
 
         async function decodeAndDisplayAddress(address, isPermanent, useBreakdown = false) {
             const targetDiv = isPermanent ? document.getElementById('decode-result') : document.getElementById('preview');
@@ -424,24 +489,28 @@
                 
                 if (isError) {
                     resultItem.innerHTML = `
-                        <h3>Address: ${address}</h3>
+                        <h3> ${address}</h3>
                         <div class="error">Error: ${result.error}</div>
+                        ${isPermanent ? `<button onclick="deleteAddress('${address.replace(/'/g, "\\'")}', this.parentElement)" class="delete-button">🗑️</button>` : ''}
                     `;
                 } else if (result.type === 'component_breakdown') {
                     resultItem.innerHTML = `
-                        <h3>Address Analysis: ${address}</h3>
+                        <h3>${address}</h3>
                         ${formatStructuredComponentBreakdown(result.breakdown)}
+                        ${isPermanent ? `<button onclick="deleteAddress('${address.replace(/'/g, "\\'")}', this.parentElement)" class="delete-button">🗑️</button>` : ''}
                     `;
                 } else if (result.type === 'valid') {
                     resultItem.innerHTML = `
-                        <h3>✓ Valid Address: ${address}</h3>
+                        <h3>${address}</h3>
                         <div class="result-content">${formatResult(result.info)}</div>
+                        ${isPermanent ? `<button onclick="deleteAddress('${address.replace(/'/g, "\\'")}', this.parentElement)" class="delete-button">🗑️</button>` : ''}
                     `;
                 } else {
                     // Fallback for old format
                     resultItem.innerHTML = `
-                        <h3>✓ Valid Address: ${address}</h3>
+                        <h3>${address}</h3>
                         <div class="result-content">${formatResult(result)}</div>
+                        ${isPermanent ? `<button onclick="deleteAddress('${address.replace(/'/g, "\\'")}', this.parentElement)" class="delete-button">🗑️</button>` : ''}
                     `;
                 }
 
@@ -486,7 +555,6 @@
             
             return `
                 <div class="component-breakdown">
-                    <h4>Address Component Analysis</h4>
                     <div class="breakdown-header">
                         <div class="breakdown-meta">
                             <div><strong>Format:</strong> ${breakdown.detected_format}</div>
@@ -573,6 +641,22 @@ ${paymentId ? `Payment ID: <span class="selectable">${paymentId}</span>` : ''}
                 document.getElementById('generate-result').insertBefore(resultItem, document.getElementById('generate-result').firstChild);
                 console.error('Error:', error);
             }
+        };
+
+        window.clearAll = function() {
+            const decodeResult = document.getElementById('decode-result');
+            const preview = document.getElementById('preview');
+
+            decodeResult.innerHTML = '';
+            preview.innerHTML = '';
+            clearAllAddressesFromUrl();
+        };
+
+        window.deleteAddress = function(address, element) {
+            // Remove from DOM
+            element.remove();
+            // Remove from URL
+            removeAddressFromUrl(address);
         };
 
         window.switchTab = function(tabName) {
