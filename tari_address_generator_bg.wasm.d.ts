@@ -24,6 +24,7 @@ export const wasmtariaddress_network: (a: number) => [number, number];
 export const wasmtariaddress_has_payment_id: (a: number) => number;
 export const wasmtariaddress_payment_id: (a: number) => [number, number];
 export const decode_tari_address: (a: number, b: number) => [number, number, number];
+export const decode_tari_address_with_breakdown: (a: number, b: number) => [number, number, number];
 export const init_panic_hook: () => void;
 export const init: () => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;

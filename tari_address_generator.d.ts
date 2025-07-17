@@ -2,6 +2,7 @@
 /* eslint-disable */
 export function init(): void;
 export function decode_tari_address(address_str: string): any;
+export function decode_tari_address_with_breakdown(address_str: string): any;
 export function init_panic_hook(): void;
 export class WasmTariAddress {
   private constructor();
@@ -112,6 +113,7 @@ export interface InitOutput {
   readonly wasmtariaddress_has_payment_id: (a: number) => number;
   readonly wasmtariaddress_payment_id: (a: number) => [number, number];
   readonly decode_tari_address: (a: number, b: number) => [number, number, number];
+  readonly decode_tari_address_with_breakdown: (a: number, b: number) => [number, number, number];
   readonly init_panic_hook: () => void;
   readonly init: () => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;

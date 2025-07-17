@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Tari Address Tools</title>
     <link rel="icon" type="image/png" href="icon.png">
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 1000px;
             margin: 0 auto;
             padding: 20px;
             background-color: #202326;
@@ -164,6 +165,123 @@
         .tab-content.active {
             display: block;
         }
+
+        /* Component Breakdown Styles */
+        .component-breakdown {
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #ff6b6b;
+        }
+        .component-breakdown h4 {
+            color: #ff6b6b;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+        }
+        .breakdown-header {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .breakdown-header .breakdown-meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 14px;
+        }
+        .breakdown-components {
+            display: grid;
+            gap: 10px;
+        }
+        .component-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            border-left: 3px solid transparent;
+        }
+        .component-item.valid {
+            border-left-color: #4CAF50;
+        }
+        .component-item.invalid {
+            border-left-color: #ff6b6b;
+        }
+        .component-item.not-present {
+            border-left-color: #666;
+            opacity: 0.6;
+        }
+        .component-label {
+            font-weight: bold;
+            min-width: 140px;
+            color: #ccc;
+        }
+        .component-value {
+            font-family: monospace;
+            flex: 1;
+            margin: 0 10px;
+            word-break: break-all;
+            font-size: 12px;
+        }
+        .component-status {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            white-space: nowrap;
+        }
+        .component-status.valid {
+            background-color: #2d5a2d;
+            color: #90EE90;
+        }
+        .component-status.invalid {
+            background-color: #5a2d2d;
+            color: #ffb3b3;
+        }
+        .component-status.not-present {
+            background-color: #3a3a3a;
+            color: #999;
+        }
+        .raw-bytes {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #1e1e1e;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            word-break: break-all;
+            border: 1px solid #444;
+        }
+        .error-attempts {
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #ffa500;
+        }
+        .error-attempts h4 {
+            color: #ffa500;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+        }
+        .attempt-item {
+            background-color: #2a2a2a;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            border-left: 3px solid #ffa500;
+        }
+        .attempt-format {
+            font-weight: bold;
+            color: #ffa500;
+            margin-bottom: 5px;
+        }
+        .attempt-error {
+            font-family: monospace;
+            font-size: 13px;
+            color: #ffcc99;
+        }
     </style>
 </head>
 <body>
@@ -208,7 +326,7 @@
     </div>
 
     <script type="module">
-        import init, { WasmTariAddressGenerator, decode_tari_address } from './tari_address_generator.js';
+        import init, { WasmTariAddressGenerator, decode_tari_address, decode_tari_address_with_breakdown } from './tari_address_generator.js';
 
         let generator = null;
         let currentPreview = null;
@@ -234,7 +352,7 @@
                 const addresses = urlParams.getAll('address');
                 if (addresses.length > 0) {
                     for (const address of addresses) {
-                        await decodeAndDisplayAddress(address, true);
+                        await decodeAndDisplayAddress(address, true, true);
                     }
                 }
                 const tab = urlParams.get('tab')?.toLowerCase()
@@ -257,7 +375,7 @@
             }
             debounceTimer = setTimeout(() => {
                 if (address) {
-                    decodeAndDisplayAddress(address, false);
+                    decodeAndDisplayAddress(address, false, true);
                 } else {
                     clearPreview();
                 }
@@ -274,25 +392,58 @@
             const address = document.getElementById('address').value;
             if (!address) return;
             
-            await decodeAndDisplayAddress(address, true);
+            await decodeAndDisplayAddress(address, true, true);
             document.getElementById('address').value = '';
             clearPreview();
         };
 
-        async function decodeAndDisplayAddress(address, isPermanent) {
+        async function decodeAndDisplayAddress(address, isPermanent, useBreakdown = false) {
             const targetDiv = isPermanent ? document.getElementById('decode-result') : document.getElementById('preview');
             
             try {
                 if (!generator) {
                     throw new Error('WASM module not initialized');
                 }
-                const info = decode_tari_address(address);
+                
+                let result;
+                let isError = false;
+                
+                try {
+                    if (useBreakdown) {
+                        result = decode_tari_address_with_breakdown(address);
+                    } else {
+                        result = decode_tari_address(address);
+                    }
+                } catch (error) {
+                    isError = true;
+                    result = { error: error.message || error.toString() };
+                }
+                
                 const resultItem = document.createElement('div');
                 resultItem.className = 'result-item';
-                resultItem.innerHTML = `
-                    <h3>Address: ${address}</h3>
-                    <div class="result-content">${formatResult(info)}</div>
-                `;
+                
+                if (isError) {
+                    resultItem.innerHTML = `
+                        <h3>Address: ${address}</h3>
+                        <div class="error">Error: ${result.error}</div>
+                    `;
+                } else if (result.type === 'component_breakdown') {
+                    resultItem.innerHTML = `
+                        <h3>Address Analysis: ${address}</h3>
+                        ${formatStructuredComponentBreakdown(result.breakdown)}
+                    `;
+                } else if (result.type === 'valid') {
+                    resultItem.innerHTML = `
+                        <h3>✓ Valid Address: ${address}</h3>
+                        <div class="result-content">${formatResult(result.info)}</div>
+                    `;
+                } else {
+                    // Fallback for old format
+                    resultItem.innerHTML = `
+                        <h3>✓ Valid Address: ${address}</h3>
+                        <div class="result-content">${formatResult(result)}</div>
+                    `;
+                }
 
                 if (isPermanent) {
                     targetDiv.insertBefore(resultItem, targetDiv.firstChild);
@@ -318,6 +469,41 @@
                 }
                 console.error('Error decoding address:', error);
             }
+        }
+
+        function formatStructuredComponentBreakdown(breakdown) {
+            const componentItems = breakdown.components.map(component => `
+                <div class="component-item ${component.status}">
+                    <div class="component-label">${component.label}:</div>
+                    <div class="component-value">${component.value || 'N/A'}</div>
+                    <div class="component-status ${component.status}">
+                        ${component.status === 'valid' ? '✓ Valid' : 
+                          component.status === 'invalid' ? '✗ Invalid' : '- Not present'}
+                        ${component.error ? `<br><small>${component.error}</small>` : ''}
+                    </div>
+                </div>
+            `).join('');
+            
+            return `
+                <div class="component-breakdown">
+                    <h4>Address Component Analysis</h4>
+                    <div class="breakdown-header">
+                        <div class="breakdown-meta">
+                            <div><strong>Format:</strong> ${breakdown.detected_format}</div>
+                            <div><strong>Size:</strong> ${breakdown.total_bytes} bytes</div>
+                        </div>
+                    </div>
+                    <div class="breakdown-components">
+                        ${componentItems}
+                    </div>
+                    ${breakdown.raw_bytes ? `
+                        <div class="raw-bytes">
+                            <strong>Raw Bytes:</strong><br>
+                            <span class="selectable">${breakdown.raw_bytes}</span>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
         }
 
         function formatResult(info) {

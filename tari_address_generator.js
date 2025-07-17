@@ -130,6 +130,20 @@ export function decode_tari_address(address_str) {
     return takeFromExternrefTable0(ret[0]);
 }
 
+/**
+ * @param {string} address_str
+ * @returns {any}
+ */
+export function decode_tari_address_with_breakdown(address_str) {
+    const ptr0 = passStringToWasm0(address_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decode_tari_address_with_breakdown(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function init_panic_hook() {
     wasm.init_panic_hook();
 }
@@ -642,6 +656,10 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_versions_c01dfd4722a88165 = function(arg0) {
         const ret = arg0.versions;
+        return ret;
+    };
+    imports.wbg.__wbindgen_bigint_from_u64 = function(arg0) {
+        const ret = BigInt.asUintN(64, arg0);
         return ret;
     };
     imports.wbg.__wbindgen_error_new = function(arg0, arg1) {
