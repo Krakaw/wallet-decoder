@@ -37,7 +37,7 @@ pub mod wasm;
 
 pub use address::{TariAddress, AddressFeatures};
 pub use cipher_seed::CipherSeed;
-pub use error::{TariError, Result};
+pub use error::{TariError, Result, AddressParsingStage, AddressParsingAttempt, AddressComponentBreakdown, ComponentValidation};
 pub use keys::{PrivateKey, PublicKey, KeyManager};
 pub use network::Network;
 pub use wallet::{TariWallet, TariAddressGenerator};

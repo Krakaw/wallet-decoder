@@ -1,6 +1,6 @@
 use crate::checksum::{compute_checksum, verify_data_with_checksum};
 use crate::emoji::{bytes_to_emoji, emoji_to_bytes};
-use crate::error::{Result, TariError};
+use crate::error::{Result, TariError, AddressParsingStage, AddressParsingAttempt, AddressComponentBreakdown, ComponentValidation};
 use crate::keys::PublicKey;
 use crate::network::Network;
 use crate::utils;
@@ -377,6 +377,472 @@ impl TariAddress {
             None,
         )
     }
+
+    /// Parse address from Base58 string with detailed error tracking
+    pub fn from_base58_detailed(s: &str) -> std::result::Result<Self, AddressParsingAttempt> {
+        if s.len() < 2 {
+            return Err(AddressParsingAttempt {
+                format: "Base58".to_string(),
+                stage: AddressParsingStage::SizeValidation,
+                error: format!("Address too short: {} characters (minimum 2)", s.len()),
+            });
+        }
+
+        let (first, rest) = s.split_at(2);
+        let (network, features) = first.split_at(1);
+
+        let network_bytes = bs58::decode(network)
+            .into_vec()
+            .map_err(|e| AddressParsingAttempt {
+                format: "Base58".to_string(),
+                stage: AddressParsingStage::Base58NetworkDecoding,
+                error: format!("Cannot decode network byte '{}': {}", network, e),
+            })?;
+
+        let features_bytes = bs58::decode(features)
+            .into_vec()
+            .map_err(|e| AddressParsingAttempt {
+                format: "Base58".to_string(),
+                stage: AddressParsingStage::Base58FeaturesDecoding,
+                error: format!("Cannot decode features byte '{}': {}", features, e),
+            })?;
+
+        let rest_bytes = bs58::decode(rest)
+            .into_vec()
+            .map_err(|e| AddressParsingAttempt {
+                format: "Base58".to_string(),
+                stage: AddressParsingStage::Base58PublicKeyDecoding,
+                error: format!("Cannot decode public key data '{}': {}", rest, e),
+            })?;
+
+        let mut result = network_bytes;
+        result.extend(features_bytes);
+        result.extend(rest_bytes);
+
+        Self::from_bytes_detailed(&result, "Base58")
+    }
+
+    /// Parse address from emoji string with detailed error tracking
+    pub fn from_emoji_detailed(emoji: &str) -> std::result::Result<Self, AddressParsingAttempt> {
+        let bytes = emoji_to_bytes(emoji)
+            .ok_or_else(|| AddressParsingAttempt {
+                format: "Emoji".to_string(),
+                stage: AddressParsingStage::EmojiDecoding,
+                error: format!("Invalid emoji sequence - contains invalid or unsupported emoji characters"),
+            })?;
+
+        Self::from_bytes_with_checksum_detailed(&bytes, "Emoji")
+    }
+
+    /// Parse address from hex string with detailed error tracking
+    pub fn from_hex_detailed(hex_str: &str) -> std::result::Result<Self, AddressParsingAttempt> {
+        let bytes = hex::decode(hex_str)
+            .map_err(|e| AddressParsingAttempt {
+                format: "Hex".to_string(),
+                stage: AddressParsingStage::HexDecoding,
+                error: format!("Invalid hex string '{}': {}", hex_str, e),
+            })?;
+
+        Self::from_bytes_detailed(&bytes, "Hex")
+    }
+
+    /// Parse address from bytes with checksum validation and detailed error tracking
+    pub fn from_bytes_with_checksum_detailed(bytes: &[u8], format: &str) -> std::result::Result<Self, AddressParsingAttempt> {
+        if !verify_data_with_checksum(bytes) {
+            return Err(AddressParsingAttempt {
+                format: format.to_string(),
+                stage: AddressParsingStage::ChecksumValidation,
+                error: format!("Invalid checksum - computed checksum doesn't match expected value"),
+            });
+        }
+
+        Self::from_bytes_detailed(&bytes, format)
+    }
+
+    /// Parse address from raw bytes with detailed error tracking
+    pub fn from_bytes_detailed(bytes: &[u8], format: &str) -> std::result::Result<Self, AddressParsingAttempt> {
+        let length = bytes.len();
+
+        // Validate size
+        if length != TARI_ADDRESS_INTERNAL_SINGLE_SIZE
+            && !(TARI_ADDRESS_INTERNAL_DUAL_SIZE
+                ..=TARI_ADDRESS_INTERNAL_DUAL_SIZE + MAX_ENCRYPTED_DATA_SIZE)
+                .contains(&length)
+        {
+            return Err(AddressParsingAttempt {
+                format: format.to_string(),
+                stage: AddressParsingStage::SizeValidation,
+                error: format!(
+                    "Invalid address size: {} bytes (expected {} for single address or {}-{} for dual address)",
+                    length,
+                    TARI_ADDRESS_INTERNAL_SINGLE_SIZE,
+                    TARI_ADDRESS_INTERNAL_DUAL_SIZE,
+                    TARI_ADDRESS_INTERNAL_DUAL_SIZE + MAX_ENCRYPTED_DATA_SIZE
+                ),
+            });
+        }
+
+        // Validate network
+        let network = Network::from_byte(bytes[0]).map_err(|_| AddressParsingAttempt {
+            format: format.to_string(),
+            stage: AddressParsingStage::NetworkValidation,
+            error: format!(
+                "Invalid network byte: 0x{:02x} (valid values: 0x00=MainNet, 0x02=NextNet, 0x26=Esmeralda)",
+                bytes[0]
+            ),
+        })?;
+
+        let features = AddressFeatures::from_byte(bytes[1]);
+
+        if bytes.len() == TARI_ADDRESS_INTERNAL_SINGLE_SIZE {
+            // Handle single address (without payment ID)
+            let spend_key = PublicKey::from_bytes(&bytes[2..34]).map_err(|e| AddressParsingAttempt {
+                format: format.to_string(),
+                stage: AddressParsingStage::PublicKeyValidation,
+                error: format!("Invalid spend public key: {}", e),
+            })?;
+
+            Ok(Self::from_components(
+                network, features, None, spend_key, None,
+            ))
+        } else {
+            // Handle dual address (with payment ID)
+            let view_key = if bytes.len() > TARI_ADDRESS_INTERNAL_SINGLE_SIZE {
+                Some(PublicKey::from_bytes(&bytes[2..34]).map_err(|e| AddressParsingAttempt {
+                    format: format.to_string(),
+                    stage: AddressParsingStage::PublicKeyValidation,
+                    error: format!("Invalid view public key: {}", e),
+                })?)
+            } else {
+                None
+            };
+
+            let spend_key = PublicKey::from_bytes(&bytes[34..66]).map_err(|e| AddressParsingAttempt {
+                format: format.to_string(),
+                stage: AddressParsingStage::PublicKeyValidation,
+                error: format!("Invalid spend public key: {}", e),
+            })?;
+
+            let payment_id = if bytes.len() > TARI_ADDRESS_INTERNAL_DUAL_SIZE {
+                Some(bytes[66..(bytes.len() - 1)].to_vec())
+            } else {
+                None
+            };
+
+            Ok(Self::from_components(
+                network, features, view_key, spend_key, payment_id,
+            ))
+        }
+    }
+
+    /// Parse address with comprehensive error reporting for all formats
+    pub fn parse_with_detailed_errors(address_str: &str) -> Result<Self> {
+        let mut attempts = Vec::new();
+
+        // Try emoji first (contains Unicode)
+        if address_str.trim().chars().any(|c| !c.is_ascii()) {
+            match Self::from_emoji_detailed(address_str) {
+                Ok(address) => return Ok(address),
+                Err(attempt) => attempts.push(attempt),
+            }
+        } else {
+            // Try Base58 first (most common format)
+            match Self::from_base58_detailed(address_str) {
+                Ok(address) => return Ok(address),
+                Err(attempt) => attempts.push(attempt),
+            }
+
+            // Try hex as fallback
+            match Self::from_hex_detailed(address_str) {
+                Ok(address) => return Ok(address),
+                Err(attempt) => attempts.push(attempt),
+            }
+        }
+
+        // All formats failed - create detailed error
+        let summary = format!(
+            "Unable to parse address '{}' in any supported format",
+            if address_str.chars().count() > 50 {
+                format!("{}...", address_str.chars().take(50).collect::<String>())
+            } else {
+                address_str.to_string()
+            }
+        );
+
+        let attempts_text = attempts
+            .iter()
+            .map(|attempt| {
+                format!(
+                    "  {} format: Failed at {} - {}",
+                    attempt.format, attempt.stage, attempt.error
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        Err(TariError::DetailedAddressParsingError {
+            summary,
+            attempts: attempts_text,
+        })
+    }
+
+    /// Parse address with comprehensive component-level breakdown
+    pub fn parse_with_component_breakdown(address_str: &str) -> Result<Self> {
+        // First try normal parsing
+        match Self::parse_with_detailed_errors(address_str) {
+            Ok(address) => Ok(address),
+            Err(_) => {
+                // Create detailed component breakdown
+                let breakdown = Self::create_component_breakdown(address_str);
+                Err(TariError::AddressComponentError { breakdown })
+            }
+        }
+    }
+
+    /// Create a detailed breakdown of address components
+    fn create_component_breakdown(address_str: &str) -> AddressComponentBreakdown {
+        let mut breakdown = AddressComponentBreakdown {
+            original_input: address_str.to_string(),
+            detected_format: "Unknown".to_string(),
+            total_bytes: 0,
+            network_byte: None,
+            network_validation: ComponentValidation::NotPresent,
+            features_byte: None,
+            features_validation: ComponentValidation::NotPresent,
+            view_public_key: None,
+            view_key_validation: ComponentValidation::NotPresent,
+            spend_public_key: None,
+            spend_key_validation: ComponentValidation::NotPresent,
+            payment_id: None,
+            payment_id_validation: ComponentValidation::NotPresent,
+            checksum_byte: None,
+            checksum_validation: ComponentValidation::NotPresent,
+            size_validation: ComponentValidation::NotPresent,
+            raw_bytes: "Unable to decode".to_string(),
+        };
+
+        // Detect format and try to decode
+        if address_str.trim().chars().any(|c| !c.is_ascii()) {
+            breakdown.detected_format = "Emoji".to_string();
+            Self::analyze_emoji_components(address_str, &mut breakdown);
+        } else if address_str.chars().all(|c| c.is_ascii_hexdigit()) {
+            breakdown.detected_format = "Hex".to_string();
+            Self::analyze_hex_components(address_str, &mut breakdown);
+        } else {
+            breakdown.detected_format = "Base58".to_string();
+            Self::analyze_base58_components(address_str, &mut breakdown);
+        }
+
+        breakdown
+    }
+
+    fn analyze_base58_components(address_str: &str, breakdown: &mut AddressComponentBreakdown) {
+        // Try to decode Base58
+        if address_str.len() < 2 {
+            breakdown.size_validation = ComponentValidation::Invalid { 
+                error: format!("Address too short: {} characters (minimum 2)", address_str.len()) 
+            };
+            return;
+        }
+
+        let (first, rest) = address_str.split_at(2);
+        let (network, features) = first.split_at(1);
+
+        // Decode network
+        match bs58::decode(network).into_vec() {
+            Ok(network_bytes) => {
+                if !network_bytes.is_empty() {
+                    breakdown.network_byte = Some(format!("0x{:02x}", network_bytes[0]));
+                    breakdown.network_validation = match Network::from_byte(network_bytes[0]) {
+                        Ok(net) => ComponentValidation::Valid,
+                        Err(_) => ComponentValidation::Invalid { 
+                            error: format!("Invalid network: 0x{:02x} (valid: 0x00=MainNet, 0x02=NextNet, 0x26=Esmeralda)", network_bytes[0])
+                        },
+                    };
+                }
+            }
+            Err(e) => {
+                breakdown.network_validation = ComponentValidation::Invalid { 
+                    error: format!("Base58 decode error: {}", e) 
+                };
+            }
+        }
+
+        // Decode features
+        match bs58::decode(features).into_vec() {
+            Ok(features_bytes) => {
+                if !features_bytes.is_empty() {
+                    breakdown.features_byte = Some(format!("0x{:02x}", features_bytes[0]));
+                    breakdown.features_validation = ComponentValidation::Valid;
+                }
+            }
+            Err(e) => {
+                breakdown.features_validation = ComponentValidation::Invalid { 
+                    error: format!("Base58 decode error: {}", e) 
+                };
+            }
+        }
+
+        // Try to decode the full address
+        let full_decode_result = Self::decode_full_base58(address_str);
+        match full_decode_result {
+            Ok(bytes) => {
+                breakdown.total_bytes = bytes.len();
+                breakdown.raw_bytes = hex::encode(&bytes);
+                Self::analyze_decoded_bytes(&bytes, breakdown);
+            }
+            Err(e) => {
+                breakdown.size_validation = ComponentValidation::Invalid { error: e };
+            }
+        }
+    }
+
+    fn analyze_hex_components(address_str: &str, breakdown: &mut AddressComponentBreakdown) {
+        match hex::decode(address_str) {
+            Ok(bytes) => {
+                breakdown.total_bytes = bytes.len();
+                breakdown.raw_bytes = hex::encode(&bytes);
+                Self::analyze_decoded_bytes(&bytes, breakdown);
+            }
+            Err(e) => {
+                breakdown.size_validation = ComponentValidation::Invalid { 
+                    error: format!("Hex decode error: {}", e) 
+                };
+            }
+        }
+    }
+
+    fn analyze_emoji_components(address_str: &str, breakdown: &mut AddressComponentBreakdown) {
+        match emoji_to_bytes(address_str) {
+            Some(bytes) => {
+                breakdown.total_bytes = bytes.len();
+                breakdown.raw_bytes = hex::encode(&bytes);
+                Self::analyze_decoded_bytes(&bytes, breakdown);
+            }
+            None => {
+                breakdown.size_validation = ComponentValidation::Invalid { 
+                    error: "Invalid emoji sequence".to_string() 
+                };
+            }
+        }
+    }
+
+    fn analyze_decoded_bytes(bytes: &[u8], breakdown: &mut AddressComponentBreakdown) {
+        let length = bytes.len();
+
+        // Size validation
+        if length == TARI_ADDRESS_INTERNAL_SINGLE_SIZE || 
+           (TARI_ADDRESS_INTERNAL_DUAL_SIZE..=TARI_ADDRESS_INTERNAL_DUAL_SIZE + MAX_ENCRYPTED_DATA_SIZE).contains(&length) {
+            breakdown.size_validation = ComponentValidation::Valid;
+        } else {
+            breakdown.size_validation = ComponentValidation::Invalid { 
+                error: format!(
+                    "Invalid size: {} bytes (expected {} for single or {}-{} for dual)",
+                    length, TARI_ADDRESS_INTERNAL_SINGLE_SIZE, 
+                    TARI_ADDRESS_INTERNAL_DUAL_SIZE, 
+                    TARI_ADDRESS_INTERNAL_DUAL_SIZE + MAX_ENCRYPTED_DATA_SIZE
+                )
+            };
+        }
+
+        if bytes.is_empty() {
+            return;
+        }
+
+        // Network byte
+        breakdown.network_byte = Some(format!("0x{:02x}", bytes[0]));
+        breakdown.network_validation = match Network::from_byte(bytes[0]) {
+            Ok(_) => ComponentValidation::Valid,
+            Err(_) => ComponentValidation::Invalid { 
+                error: format!("Invalid network: 0x{:02x} (valid: 0x00=MainNet, 0x02=NextNet, 0x26=Esmeralda)", bytes[0])
+            },
+        };
+
+        if bytes.len() < 2 {
+            return;
+        }
+
+        // Features byte
+        breakdown.features_byte = Some(format!("0x{:02x}", bytes[1]));
+        breakdown.features_validation = ComponentValidation::Valid;
+
+        // For single address (35 bytes)
+        if length == TARI_ADDRESS_INTERNAL_SINGLE_SIZE {
+            if bytes.len() >= 34 {
+                breakdown.spend_public_key = Some(hex::encode(&bytes[2..34]));
+                breakdown.spend_key_validation = match PublicKey::from_bytes(&bytes[2..34]) {
+                    Ok(_) => ComponentValidation::Valid,
+                    Err(e) => ComponentValidation::Invalid { error: format!("Invalid spend key: {}", e) },
+                };
+            }
+
+            if bytes.len() >= 35 {
+                breakdown.checksum_byte = Some(format!("0x{:02x}", bytes[34]));
+                breakdown.checksum_validation = if verify_data_with_checksum(bytes) {
+                    ComponentValidation::Valid
+                } else {
+                    ComponentValidation::Invalid { error: "Checksum mismatch".to_string() }
+                };
+            }
+        } 
+        // For dual address (67+ bytes)
+        else if length >= TARI_ADDRESS_INTERNAL_DUAL_SIZE {
+            if bytes.len() >= 34 {
+                breakdown.view_public_key = Some(hex::encode(&bytes[2..34]));
+                breakdown.view_key_validation = match PublicKey::from_bytes(&bytes[2..34]) {
+                    Ok(_) => ComponentValidation::Valid,
+                    Err(e) => ComponentValidation::Invalid { error: format!("Invalid view key: {}", e) },
+                };
+            }
+
+            if bytes.len() >= 66 {
+                breakdown.spend_public_key = Some(hex::encode(&bytes[34..66]));
+                breakdown.spend_key_validation = match PublicKey::from_bytes(&bytes[34..66]) {
+                    Ok(_) => ComponentValidation::Valid,
+                    Err(e) => ComponentValidation::Invalid { error: format!("Invalid spend key: {}", e) },
+                };
+            }
+
+            if bytes.len() > TARI_ADDRESS_INTERNAL_DUAL_SIZE {
+                let payment_id_end = bytes.len() - 1;
+                breakdown.payment_id = Some(hex::encode(&bytes[66..payment_id_end]));
+                breakdown.payment_id_validation = ComponentValidation::Valid;
+            }
+
+            if bytes.len() > 0 {
+                let checksum_idx = bytes.len() - 1;
+                breakdown.checksum_byte = Some(format!("0x{:02x}", bytes[checksum_idx]));
+                breakdown.checksum_validation = if verify_data_with_checksum(bytes) {
+                    ComponentValidation::Valid
+                } else {
+                    ComponentValidation::Invalid { error: "Checksum mismatch".to_string() }
+                };
+            }
+        }
+    }
+
+    fn decode_full_base58(address_str: &str) -> std::result::Result<Vec<u8>, String> {
+        if address_str.len() < 2 {
+            return Err("Address too short".to_string());
+        }
+
+        let (first, rest) = address_str.split_at(2);
+        let (network, features) = first.split_at(1);
+
+        let mut result = bs58::decode(network)
+            .into_vec()
+            .map_err(|e| format!("Cannot decode network: {}", e))?;
+        let mut features_bytes = bs58::decode(features)
+            .into_vec()
+            .map_err(|e| format!("Cannot decode features: {}", e))?;
+        let mut rest_bytes = bs58::decode(rest)
+            .into_vec()
+            .map_err(|e| format!("Cannot decode rest: {}", e))?;
+
+        result.append(&mut features_bytes);
+        result.append(&mut rest_bytes);
+        Ok(result)
+    }
 }
 
 impl std::fmt::Debug for TariAddress {
@@ -544,5 +1010,87 @@ mod tests {
         // Test Display implementation
         let features = AddressFeatures::ONE_SIDED | AddressFeatures::PAYMENT_ID;
         assert_eq!(features.to_string(), "One-sided,Payment-id,");
+    }
+
+    #[test]
+    fn test_detailed_error_handling() {
+        use crate::error::TariError;
+        
+        // Test various invalid addresses to ensure detailed error reporting
+        let test_cases = vec![
+            ("", "Address too short"),
+            ("1", "Address too short"), 
+            ("12345", "Invalid address size"),
+            ("invalidaddress", "invalid character"),
+            ("FF016c1b073261df680b5a95dbc8c559ed1eec8d31f66c90e9e2843d3376cb61425112", "Invalid network byte: 0xff"),
+            ("16Yt2MgL51qYTXBGQ6tF1Z9thmcxLgWGoAXWEdQRJjGriQ38DvGhPFXzLEDF4XtE4yrdXBS3n7byoUbsN6QdCuXyTXgArdJG6ZtAtPGvZQ", "Invalid compressed point"),
+        ];
+
+        for (invalid_address, expected_error_fragment) in test_cases {
+            let result = TariAddress::parse_with_detailed_errors(invalid_address);
+            assert!(result.is_err(), "Address '{}' should be invalid", invalid_address);
+            
+            match result.unwrap_err() {
+                TariError::DetailedAddressParsingError { summary: _, attempts } => {
+                    assert!(
+                        attempts.contains(expected_error_fragment),
+                        "Expected error fragment '{}' not found in attempts: {}",
+                        expected_error_fragment,
+                        attempts
+                    );
+                }
+                other => panic!("Expected DetailedAddressParsingError, got: {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn test_detailed_error_handling_preserves_valid_parsing() {
+        // Ensure valid addresses still work with the new detailed error handling
+        let valid_hex = "00016c1b073261df680b5a95dbc8c559ed1eec8d31f66c90e9e2843d3376cb61425112";
+        let address = TariAddress::parse_with_detailed_errors(valid_hex).unwrap();
+        
+        assert_eq!(address.network(), Network::MainNet);
+        assert_eq!(address.spend_key().to_hex(), "6c1b073261df680b5a95dbc8c559ed1eec8d31f66c90e9e2843d3376cb614251");
+        
+        // Test round-trip
+        let base58 = address.to_base58();
+        let restored = TariAddress::parse_with_detailed_errors(&base58).unwrap();
+        assert_eq!(address, restored);
+    }
+
+    #[test]
+    fn test_component_breakdown() {
+        use crate::error::TariError;
+        
+        // Test with invalid address
+        let invalid_address = "16Yt2MgL51qYTXBGQ6tF1Z9thmcxLgWGoAXWEdQRJjGriQ38DvGhPFXzLEDF4XtE4yrdXBS3n7byoUbsN6QdCuXyTXgArdJG6ZtAtPGvZQ";
+        let result = TariAddress::parse_with_component_breakdown(invalid_address);
+        
+        assert!(result.is_err(), "Address should be invalid");
+        
+        match result.unwrap_err() {
+            TariError::AddressComponentError { breakdown } => {
+                assert_eq!(breakdown.detected_format, "Base58");
+                assert_eq!(breakdown.total_bytes, 79);
+                assert!(breakdown.network_byte.is_some());
+                assert!(breakdown.view_public_key.is_some());
+                assert!(breakdown.spend_public_key.is_some());
+                assert!(matches!(breakdown.view_key_validation, ComponentValidation::Invalid { .. }));
+                assert!(matches!(breakdown.spend_key_validation, ComponentValidation::Invalid { .. }));
+            }
+            other => panic!("Expected AddressComponentError, got: {:?}", other),
+        }
+    }
+
+    #[test] 
+    fn test_component_breakdown_valid_address() {
+        // Test with valid address
+        let valid_hex = "00016c1b073261df680b5a95dbc8c559ed1eec8d31f66c90e9e2843d3376cb61425112";
+        let result = TariAddress::parse_with_component_breakdown(valid_hex);
+        
+        assert!(result.is_ok(), "Valid address should parse successfully");
+        let address = result.unwrap();
+        assert_eq!(address.network(), Network::MainNet);
     }
 }

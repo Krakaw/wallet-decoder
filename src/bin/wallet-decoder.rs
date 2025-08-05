@@ -28,6 +28,10 @@ pub enum Command {
     Decode {
         /// The Tari address to decode
         address: String,
+        
+        /// Show detailed component breakdown with hex data
+        #[clap(long, short)]
+        breakdown: bool,
     },
     /// Load a seed phrase and output addresses
     Load {
@@ -71,15 +75,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        Command::Decode { address } => {
-            let address = TariAddressGenerator::new().parse_address(&address)?;
-            println!("Decoded address:");
-            println!("Network: {}", address.network());
-            println!("Base58: {}", address.to_base58());
-            println!("Emoji: {}", address.to_emoji());
+        Command::Decode { address, breakdown } => {
+            let generator = TariAddressGenerator::new();
+            
+            if breakdown {
+                // Use component breakdown for detailed error analysis
+                match generator.parse_address_with_breakdown(&address) {
+                    Ok(address) => {
+                        println!("✓ Address is valid!");
+                        println!("Network: {}", address.network());
+                        println!("Base58: {}", address.to_base58());
+                        println!("Emoji: {}", address.to_emoji());
+                        if let Some(payment_id) = address.payment_id() {
+                            println!("Payment ID: {}", hex::encode(payment_id));
+                        }
+                    }
+                    Err(e) => {
+                        println!("{}", e);
+                        return Err(e.into());
+                    }
+                }
+            } else {
+                // Use standard parsing with detailed errors
+                let address = generator.parse_address(&address)?;
+                println!("Decoded address:");
+                println!("Network: {}", address.network());
+                println!("Base58: {}", address.to_base58());
+                println!("Emoji: {}", address.to_emoji());
 
-            if let Some(payment_id) = address.payment_id() {
-                println!("Payment ID: {}", hex::encode(payment_id));
+                if let Some(payment_id) = address.payment_id() {
+                    println!("Payment ID: {}", hex::encode(payment_id));
+                }
             }
         }
         Command::Load {

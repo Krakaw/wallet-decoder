@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Tari Address Tools</title>
     <link rel="icon" type="image/png" href="icon.png">
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 1000px;
             margin: 0 auto;
             padding: 20px;
             background-color: #202326;
@@ -72,6 +73,7 @@
             margin-bottom: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            position: relative;
         }
         .result-item h3 {
             margin-top: 0;
@@ -81,6 +83,32 @@
             margin-bottom: 15px;
             word-break: break-all;
             overflow-wrap: break-word;
+        }
+        .clear-button {
+            background-color: #dc3545 !important;
+        }
+        .clear-button:hover {
+            background-color: #c82333 !important;
+        }
+        .delete-button {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background-color: transparent !important;
+            border: 1px solid #666 !important;
+            color: #999 !important;
+            padding: 6px 8px !important;
+            font-size: 14px !important;
+            border-radius: 4px !important;
+            opacity: 0.6;
+            transition: all 0.2s ease;
+            margin: 5px;
+        }
+        .delete-button:hover {
+            background-color: #dc3545 !important;
+            color: white !important;
+            border-color: #dc3545 !important;
+            opacity: 1;
         }
         .result-content {
             font-family: monospace;
@@ -164,6 +192,123 @@
         .tab-content.active {
             display: block;
         }
+
+        /* Component Breakdown Styles */
+        .component-breakdown {
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #ff6b6b;
+        }
+        .component-breakdown h4 {
+            color: #ff6b6b;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+        }
+        .breakdown-header {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .breakdown-header .breakdown-meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 14px;
+        }
+        .breakdown-components {
+            display: grid;
+            gap: 10px;
+        }
+        .component-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            border-left: 3px solid transparent;
+        }
+        .component-item.valid {
+            border-left-color: #4CAF50;
+        }
+        .component-item.invalid {
+            border-left-color: #ff6b6b;
+        }
+        .component-item.not-present {
+            border-left-color: #666;
+            opacity: 0.6;
+        }
+        .component-label {
+            font-weight: bold;
+            min-width: 140px;
+            color: #ccc;
+        }
+        .component-value {
+            font-family: monospace;
+            flex: 1;
+            margin: 0 10px;
+            word-break: break-all;
+            font-size: 12px;
+        }
+        .component-status {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            white-space: nowrap;
+        }
+        .component-status.valid {
+            background-color: #2d5a2d;
+            color: #90EE90;
+        }
+        .component-status.invalid {
+            background-color: #5a2d2d;
+            color: #ffb3b3;
+        }
+        .component-status.not-present {
+            background-color: #3a3a3a;
+            color: #999;
+        }
+        .raw-bytes {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #1e1e1e;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            word-break: break-all;
+            border: 1px solid #444;
+        }
+        .error-attempts {
+            background-color: #1a1a1a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #ffa500;
+        }
+        .error-attempts h4 {
+            color: #ffa500;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+        }
+        .attempt-item {
+            background-color: #2a2a2a;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            border-left: 3px solid #ffa500;
+        }
+        .attempt-format {
+            font-weight: bold;
+            color: #ffa500;
+            margin-bottom: 5px;
+        }
+        .attempt-error {
+            font-family: monospace;
+            font-size: 13px;
+            color: #ffcc99;
+        }
     </style>
 </head>
 <body>
@@ -185,7 +330,10 @@
     <div id="decode-tab" class="tab-content active">
         <div class="input-group">
             <input type="text" id="address" placeholder="Enter Tari address" autofocus>
-            <button onclick="decodeAddress()">Decode Address</button>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button onclick="decodeAddress()">Decode Address</button>
+                <button onclick="clearAll()" class="clear-button" style="margin-left: auto;">Clear All</button>
+            </div>
         </div>
         <div id="preview" class="result-container" style="opacity: 0.7;"></div>
         <div id="decode-result" class="result-container"></div>
@@ -208,7 +356,7 @@
     </div>
 
     <script type="module">
-        import init, { WasmTariAddressGenerator, decode_tari_address } from './tari_address_generator.js';
+        import init, { WasmTariAddressGenerator, decode_tari_address, decode_tari_address_with_breakdown } from './tari_address_generator.js';
 
         let generator = null;
         let currentPreview = null;
@@ -234,7 +382,7 @@
                 const addresses = urlParams.getAll('address');
                 if (addresses.length > 0) {
                     for (const address of addresses) {
-                        await decodeAndDisplayAddress(address, true);
+                        await decodeAndDisplayAddress(address, true, true);
                     }
                 }
                 const tab = urlParams.get('tab')?.toLowerCase()
@@ -257,7 +405,7 @@
             }
             debounceTimer = setTimeout(() => {
                 if (address) {
-                    decodeAndDisplayAddress(address, false);
+                    decodeAndDisplayAddress(address, false, true);
                 } else {
                     clearPreview();
                 }
@@ -274,25 +422,97 @@
             const address = document.getElementById('address').value;
             if (!address) return;
             
-            await decodeAndDisplayAddress(address, true);
+            // Add address to URL parameters
+            addAddressToUrl(address);
+            
+            await decodeAndDisplayAddress(address, true, true);
             document.getElementById('address').value = '';
             clearPreview();
         };
 
-        async function decodeAndDisplayAddress(address, isPermanent) {
+        function addAddressToUrl(address) {
+            const url = new URL(window.location);
+            const addresses = url.searchParams.getAll('address');
+            
+            // Only add if not already present
+            if (!addresses.includes(address)) {
+                url.searchParams.append('address', address);
+                window.history.replaceState({}, '', url);
+            }
+        }
+
+        function removeAddressFromUrl(address) {
+            const url = new URL(window.location);
+            const addresses = url.searchParams.getAll('address');
+            
+            // Remove all address parameters and re-add the ones we want to keep
+            url.searchParams.delete('address');
+            addresses.forEach(addr => {
+                if (addr !== address) {
+                    url.searchParams.append('address', addr);
+                }
+            });
+            
+            window.history.replaceState({}, '', url);
+        }
+
+        function clearAllAddressesFromUrl() {
+            const url = new URL(window.location);
+            url.searchParams.delete('address');
+            window.history.replaceState({}, '', url);
+        }
+
+        async function decodeAndDisplayAddress(address, isPermanent, useBreakdown = false) {
             const targetDiv = isPermanent ? document.getElementById('decode-result') : document.getElementById('preview');
             
             try {
                 if (!generator) {
                     throw new Error('WASM module not initialized');
                 }
-                const info = decode_tari_address(address);
+                
+                let result;
+                let isError = false;
+                
+                try {
+                    if (useBreakdown) {
+                        result = decode_tari_address_with_breakdown(address);
+                    } else {
+                        result = decode_tari_address(address);
+                    }
+                } catch (error) {
+                    isError = true;
+                    result = { error: error.message || error.toString() };
+                }
+                
                 const resultItem = document.createElement('div');
                 resultItem.className = 'result-item';
-                resultItem.innerHTML = `
-                    <h3>Address: ${address}</h3>
-                    <div class="result-content">${formatResult(info)}</div>
-                `;
+                
+                if (isError) {
+                    resultItem.innerHTML = `
+                        <h3> ${address}</h3>
+                        <div class="error">Error: ${result.error}</div>
+                        ${isPermanent ? `<button onclick="deleteAddress('${address.replace(/'/g, "\\'")}', this.parentElement)" class="delete-button">🗑️</button>` : ''}
+                    `;
+                } else if (result.type === 'component_breakdown') {
+                    resultItem.innerHTML = `
+                        <h3>${address}</h3>
+                        ${formatStructuredComponentBreakdown(result.breakdown)}
+                        ${isPermanent ? `<button onclick="deleteAddress('${address.replace(/'/g, "\\'")}', this.parentElement)" class="delete-button">🗑️</button>` : ''}
+                    `;
+                } else if (result.type === 'valid') {
+                    resultItem.innerHTML = `
+                        <h3>${address}</h3>
+                        <div class="result-content">${formatResult(result.info)}</div>
+                        ${isPermanent ? `<button onclick="deleteAddress('${address.replace(/'/g, "\\'")}', this.parentElement)" class="delete-button">🗑️</button>` : ''}
+                    `;
+                } else {
+                    // Fallback for old format
+                    resultItem.innerHTML = `
+                        <h3>${address}</h3>
+                        <div class="result-content">${formatResult(result)}</div>
+                        ${isPermanent ? `<button onclick="deleteAddress('${address.replace(/'/g, "\\'")}', this.parentElement)" class="delete-button">🗑️</button>` : ''}
+                    `;
+                }
 
                 if (isPermanent) {
                     targetDiv.insertBefore(resultItem, targetDiv.firstChild);
@@ -318,6 +538,40 @@
                 }
                 console.error('Error decoding address:', error);
             }
+        }
+
+        function formatStructuredComponentBreakdown(breakdown) {
+            const componentItems = breakdown.components.map(component => `
+                <div class="component-item ${component.status}">
+                    <div class="component-label">${component.label}:</div>
+                    <div class="component-value">${component.value || 'N/A'}</div>
+                    <div class="component-status ${component.status}">
+                        ${component.status === 'valid' ? '✓ Valid' : 
+                          component.status === 'invalid' ? '✗ Invalid' : '- Not present'}
+                        ${component.error ? `<br><small>${component.error}</small>` : ''}
+                    </div>
+                </div>
+            `).join('');
+            
+            return `
+                <div class="component-breakdown">
+                    <div class="breakdown-header">
+                        <div class="breakdown-meta">
+                            <div><strong>Format:</strong> ${breakdown.detected_format}</div>
+                            <div><strong>Size:</strong> ${breakdown.total_bytes} bytes</div>
+                        </div>
+                    </div>
+                    <div class="breakdown-components">
+                        ${componentItems}
+                    </div>
+                    ${breakdown.raw_bytes ? `
+                        <div class="raw-bytes">
+                            <strong>Raw Bytes:</strong><br>
+                            <span class="selectable">${breakdown.raw_bytes}</span>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
         }
 
         function formatResult(info) {
@@ -387,6 +641,22 @@ ${paymentId ? `Payment ID: <span class="selectable">${paymentId}</span>` : ''}
                 document.getElementById('generate-result').insertBefore(resultItem, document.getElementById('generate-result').firstChild);
                 console.error('Error:', error);
             }
+        };
+
+        window.clearAll = function() {
+            const decodeResult = document.getElementById('decode-result');
+            const preview = document.getElementById('preview');
+
+            decodeResult.innerHTML = '';
+            preview.innerHTML = '';
+            clearAllAddressesFromUrl();
+        };
+
+        window.deleteAddress = function(address, element) {
+            // Remove from DOM
+            element.remove();
+            // Remove from URL
+            removeAddressFromUrl(address);
         };
 
         window.switchTab = function(tabName) {
