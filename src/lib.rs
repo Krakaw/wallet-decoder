@@ -32,7 +32,7 @@ pub mod wallet;
 pub mod wordlist;
 pub mod utils;
 
-#[cfg(feature = "wasm-bindgen")]
+#[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
 pub use address::{TariAddress, AddressFeatures};
